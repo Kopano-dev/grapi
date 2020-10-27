@@ -3,10 +3,27 @@ import base64
 
 import falcon
 
+from MAPI.Tags import (
+    PR_ATTACHMENT_CONTACTPHOTO, PR_GIVEN_NAME_W, PR_MIDDLE_NAME_W,
+    PR_SURNAME_W, PR_NICKNAME_W, PR_TITLE_W, PR_GENERATION_W, PR_BODY_W,
+    PR_COMPANY_NAME_W, PR_MOBILE_TELEPHONE_NUMBER_W, PR_CHILDRENS_NAMES_W,
+    PR_BIRTHDAY, PR_SPOUSE_NAME_W, PR_INITIALS_W, PR_DISPLAY_NAME_PREFIX_W,
+    PR_DEPARTMENT_NAME_W, PR_OFFICE_LOCATION_W, PR_PROFESSION_W,
+    PR_MANAGER_NAME_W, PR_ASSISTANT_W, PR_BUSINESS_HOME_PAGE_W,
+    PR_HOME_TELEPHONE_NUMBER_W, PR_HOME2_TELEPHONE_NUMBER_W,
+    PR_BUSINESS_TELEPHONE_NUMBER_W, PR_BUSINESS2_TELEPHONE_NUMBER_W,
+    PR_HOME_ADDRESS_STREET_W, PR_HOME_ADDRESS_CITY_W,
+    PR_HOME_ADDRESS_POSTAL_CODE_W, PR_HOME_ADDRESS_STATE_OR_PROVINCE_W,
+    PR_HOME_ADDRESS_COUNTRY_W, PR_OTHER_ADDRESS_STREET_W,
+    PR_OTHER_ADDRESS_CITY_W, PR_OTHER_ADDRESS_POSTAL_CODE_W,
+    PR_OTHER_ADDRESS_STATE_OR_PROVINCE_W, PR_OTHER_ADDRESS_COUNTRY_W,
+    PR_READ_RECEIPT_REQUESTED,
+)
+
 from . import attachment  # import as module since this is a circular import
 from .item import ItemResource, get_body, get_email, set_body
 from .resource import DEFAULT_TOP, _date
-from .utils import HTTPBadRequest, _folder, _item, _server_store, experimental
+from .utils import HTTPBadRequest, _folder, _item, _server_store, _set_value_by_tag, experimental
 
 
 def set_torecipients(item, arg):
@@ -15,6 +32,22 @@ def set_torecipients(item, arg):
         a = a['emailAddress']
         addrs.append('%s <%s>' % (a.get('name', a['address']), a['address']))
     item.to = ';'.join(addrs)
+
+
+def set_ccrecipients(item, arg):
+    addrs = []
+    for a in arg:
+        a = a['emailAddress']
+        addrs.append('%s <%s>' % (a.get('name', a['address']), a['address']))
+    item.cc = ';'.join(addrs)
+
+
+def set_bccrecipients(item, arg):
+    addrs = []
+    for a in arg:
+        a = a['emailAddress']
+        addrs.append('%s <%s>' % (a.get('name', a['address']), a['address']))
+    item.bcc = ';'.join(addrs)
 
 
 class DeletedMessageResource(ItemResource):
@@ -58,6 +91,13 @@ class MessageResource(ItemResource):
         'body': set_body,
         'toRecipients': set_torecipients,
         'isRead': lambda item, arg: setattr(item, 'read', arg),
+        'ccRecipients': set_ccrecipients,
+        'bccRecipients': set_bccrecipients,
+        'importance': lambda item, arg: setattr(item, 'urgency', arg),
+        # 'isDeliveryReceiptRequested': lambda item, arg: setattr(item, 'read_receipt', arg),
+        'isDeliveryReceiptRequested': lambda item, arg: _set_value_by_tag(item, arg, PR_READ_RECEIPT_REQUESTED),
+        'bodyPreview': lambda item, arg: _set_value_by_tag(item, arg, PR_BODY_W),
+
     }
 
     deleted_resource = DeletedMessageResource

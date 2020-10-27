@@ -2,7 +2,23 @@
 
 from .item import ItemResource, get_email2
 from .resource import _date
-from .utils import HTTPBadRequest, _folder, _item, _server_store, experimental
+from .utils import HTTPBadRequest, _folder, _item, _server_store, _set_value_by_tag, experimental
+
+from MAPI.Tags import (
+    PR_ATTACHMENT_CONTACTPHOTO, PR_GIVEN_NAME_W, PR_MIDDLE_NAME_W,
+    PR_SURNAME_W, PR_NICKNAME_W, PR_TITLE_W, PR_GENERATION_W, PR_BODY_W,
+    PR_COMPANY_NAME_W, PR_MOBILE_TELEPHONE_NUMBER_W, PR_CHILDRENS_NAMES_W,
+    PR_BIRTHDAY, PR_SPOUSE_NAME_W, PR_INITIALS_W, PR_DISPLAY_NAME_PREFIX_W,
+    PR_DEPARTMENT_NAME_W, PR_OFFICE_LOCATION_W, PR_PROFESSION_W,
+    PR_MANAGER_NAME_W, PR_ASSISTANT_W, PR_BUSINESS_HOME_PAGE_W,
+    PR_HOME_TELEPHONE_NUMBER_W, PR_HOME2_TELEPHONE_NUMBER_W,
+    PR_BUSINESS_TELEPHONE_NUMBER_W, PR_BUSINESS2_TELEPHONE_NUMBER_W,
+    PR_HOME_ADDRESS_STREET_W, PR_HOME_ADDRESS_CITY_W,
+    PR_HOME_ADDRESS_POSTAL_CODE_W, PR_HOME_ADDRESS_STATE_OR_PROVINCE_W,
+    PR_HOME_ADDRESS_COUNTRY_W, PR_OTHER_ADDRESS_STREET_W,
+    PR_OTHER_ADDRESS_CITY_W, PR_OTHER_ADDRESS_POSTAL_CODE_W,
+    PR_OTHER_ADDRESS_STATE_OR_PROVINCE_W, PR_OTHER_ADDRESS_COUNTRY_W,
+)
 
 
 def set_email_addresses(item, arg):  # TODO multiple via pyko
@@ -70,6 +86,54 @@ class ContactResource(ItemResource):
     set_fields = {
         'displayName': lambda item, arg: setattr(item, 'name', arg),
         'emailAddresses': set_email_addresses,
+        'givenName': lambda item, arg: _set_value_by_tag(item, arg, PR_GIVEN_NAME_W),
+        'middleName': lambda item, arg: _set_value_by_tag(item, arg, PR_MIDDLE_NAME_W),
+        'surname': lambda item, arg: _set_value_by_tag(item, arg, PR_SURNAME_W),
+        'nickName': lambda item, arg: _set_value_by_tag(item, arg, PR_NICKNAME_W),
+        'title': lambda item, arg: _set_value_by_tag(item, arg, PR_DISPLAY_NAME_PREFIX_W),
+        'companyName': lambda item, arg: _set_value_by_tag(item, arg, PR_COMPANY_NAME_W),
+        'mobilePhone': lambda item, arg: _set_value_by_tag(item, arg, PR_MOBILE_TELEPHONE_NUMBER_W),
+        'personalNotes': lambda item, arg: _set_value_by_tag(item, str(arg), PR_BODY_W),
+        'generation': lambda item, arg: _set_value_by_tag(item, arg, PR_GENERATION_W),
+        # 'children': lambda item, arg: set_by_tag(item, arg, PR_CHILDRENS_NAMES_W),
+        'spouseName': lambda item, arg: _set_value_by_tag(item, arg, PR_SPOUSE_NAME_W),
+        'birthday': lambda item, arg: _set_value_by_tag(item, arg, PR_BIRTHDAY),
+        'initials': lambda item, arg: _set_value_by_tag(item, arg, PR_INITIALS_W),
+        # 'yomiGivenName': lambda item, arg: set_by_tag(item, arg, PidLidYomiFirstName),
+        # 'yomiSurname': lambda item, arg: set_by_tag(item, arg, PidLidYomiLastName),
+        # 'yomiCompanyName': lambda item, arg: set_by_tag(item, arg, PidLidYomiCompanyName),
+        # 'fileAs': lambda item, arg: set_by_tag(item, arg, PidLidFileUnder),
+        'jobTitle': lambda item, arg: _set_value_by_tag(item, arg, PR_TITLE_W),
+        'department': lambda item, arg: _set_value_by_tag(item, arg, PR_DEPARTMENT_NAME_W),
+        'officeLocation': lambda item, arg: _set_value_by_tag(item, arg, PR_OFFICE_LOCATION_W),
+        'profession': lambda item, arg: _set_value_by_tag(item, arg, PR_PROFESSION_W),
+        'manager': lambda item, arg: _set_value_by_tag(item, arg, PR_MANAGER_NAME_W),
+        'assistantName': lambda item, arg: _set_value_by_tag(item, arg, PR_ASSISTANT_W),
+        'businessHomePage': lambda item, arg: _set_value_by_tag(item, arg, PR_BUSINESS_HOME_PAGE_W),
+        # 'homePhones': lambda item, arg: set_by_tag(item, arg, [PR_HOME_TELEPHONE_NUMBER_W, PR_HOME2_TELEPHONE_NUMBER_W]),
+        # 'businessPhones': lambda item, arg: set_by_tag(item, arg, [PR_HOME_TELEPHONE_NUMBER_W, PR_HOME2_TELEPHONE_NUMBER_W]),
+        # 'imAddresses': lambda item, arg: set_by_tag(item, arg, PidLidInstantMessagingAddress),
+        # 'homeAddress': lambda item, arg: set_by_tag(item, arg, [
+        #             PR_HOME_ADDRESS_STREET_W,
+        #             PR_HOME_ADDRESS_CITY_W,
+        #             PR_HOME_ADDRESS_POSTAL_CODE_W,
+        #             PR_HOME_ADDRESS_STATE_OR_PROVINCE_W,
+        #             PR_HOME_ADDRESS_COUNTRY_W,
+        #         ]),
+        # 'businessAddress': lambda item, arg: set_by_tag(item, arg, [
+        #             PidLidWorkAddressStreet,
+        #             PidLidWorkAddressCity,
+        #             PidLidWorkAddressPostalCode,
+        #             PidLidWorkAddressState,
+        #             PidLidWorkAddressCountry,
+        #         ]),
+        # 'otherAddress': lambda item, arg: set_by_tag(item, arg, [
+        #             PR_OTHER_ADDRESS_STREET_W,
+        #             PR_OTHER_ADDRESS_CITY_W,
+        #             PR_OTHER_ADDRESS_POSTAL_CODE_W,
+        #             PR_OTHER_ADDRESS_STATE_OR_PROVINCE_W,
+        #             PR_OTHER_ADDRESS_COUNTRY_W,
+        #         ]),
     }
 
     deleted_resource = DeletedContactResource

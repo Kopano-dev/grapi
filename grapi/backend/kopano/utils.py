@@ -370,3 +370,7 @@ def _handle_exception(ex, req):
     except MAPIErrorNoAccess:
         logging.debug('access forbidden for user %s for request %s', req.context.userid, req.path, exc_info=True)
         raise falcon.HTTPForbidden('No access', None)
+
+
+def _set_value_by_tag(item, arg, tag):
+    item.create_prop(tag, arg)
