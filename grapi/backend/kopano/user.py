@@ -233,6 +233,7 @@ class UserResource(Resource):
     @experimental
     def handle_post_messages(self, req, resp, fields, store):
         item = self.create_message(store.drafts, fields, MessageResource.set_fields)
+        item.message_class = 'IPM.Note'  # Set message class to fix broken message
         self.respond(req, resp, item, MessageResource.fields)
 
     @experimental
