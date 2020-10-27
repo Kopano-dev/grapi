@@ -49,7 +49,7 @@ class ContactFolderResource(FolderResource):
                 handler = self.handle_get
 
             elif method == 'contacts':
-                handler = self.handle_get_contafts
+                handler = self.handle_get_contacts
 
             elif method:
                 raise HTTPBadRequest("Unsupported contactfolder segment '%s'" % method)
