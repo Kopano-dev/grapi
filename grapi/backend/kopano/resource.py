@@ -242,6 +242,18 @@ class Resource(BaseResource):
 
     def folder_gen(self, req, folder):
         args = self.parse_qs(req)  # TODO generalize
+        # TODO implement odata
+        # TODO For now we will at least provide a way to filter by 'isRead eq false' to get unread mails
+        # TODO filter will for now override search
+        if '$filter' in args:
+            if "isRead eq false" in args['$filter']:
+                query = "read:false"
+
+                def yielder(**kwargs):
+                    for item in folder.items(query=query):
+                        yield item
+                return self.generator(req, yielder, 0)
+
         if '$search' in args:
             query = args['$search'][0]
 
