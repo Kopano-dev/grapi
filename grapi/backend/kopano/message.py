@@ -96,7 +96,7 @@ class MessageResource(ItemResource):
         'importance': lambda item, arg: setattr(item, 'urgency', arg),
         # 'isDeliveryReceiptRequested': lambda item, arg: setattr(item, 'read_receipt', arg),
         'isDeliveryReceiptRequested': lambda item, arg: _set_value_by_tag(item, arg, PR_READ_RECEIPT_REQUESTED),
-        'bodyPreview': lambda item, arg: _set_value_by_tag(item, arg, PR_BODY_W),
+        # 'bodyPreview': lambda item, arg: _set_value_by_tag(item, arg, PR_BODY_W),
 
     }
 
