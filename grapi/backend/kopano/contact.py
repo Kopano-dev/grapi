@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-
+import logging
+from datetime import datetime
 from .item import ItemResource, get_email2
 from .resource import _date
-from .utils import HTTPBadRequest, _folder, _item, _server_store, _set_value_by_tag, experimental
+from .utils import HTTPBadRequest, _folder, _item, _server_store, _set_value_by_tag, _set_value_per_tag, experimental
 
 from MAPI.Tags import (
     PR_ATTACHMENT_CONTACTPHOTO, PR_GIVEN_NAME_W, PR_MIDDLE_NAME_W,
@@ -20,6 +21,18 @@ from MAPI.Tags import (
     PR_OTHER_ADDRESS_STATE_OR_PROVINCE_W, PR_OTHER_ADDRESS_COUNTRY_W,
 )
 
+# TODO import constants
+PidLidYomiFirstName = 'PT_UNICODE:PSETID_Address:0x802C'
+PidLidYomiLastName = 'PT_UNICODE:PSETID_Address:0x802D'
+PidLidYomiCompanyName = 'PT_UNICODE:PSETID_Address:0x802E'
+PidLidFileUnder = 'PT_UNICODE:PSETID_Address:0x8005'
+PidLidInstantMessagingAddress = 'PT_UNICODE:PSETID_Address:0x8062'
+PidLidWorkAddressStreet = 'PT_UNICODE:PSETID_Address:0x8045'
+PidLidWorkAddressCity = 'PT_UNICODE:PSETID_Address:0x8046'
+PidLidWorkAddressState = 'PT_UNICODE:PSETID_Address:0x8047'
+PidLidWorkAddressPostalCode = 'PT_UNICODE:PSETID_Address:0x8048'
+PidLidWorkAddressCountry = 'PT_UNICODE:PSETID_Address:0x8049'
+
 
 def set_email_addresses(item, arg):  # TODO multiple via pyko
     item.address1 = '%s <%s>' % (arg[0]['name'], arg[0]['address'])
@@ -34,6 +47,61 @@ def _phys_address(addr):
         'countryOrRegion': addr.country
     }
     return {a: b for (a, b) in data.items() if b}
+
+
+PHYS_ADDRESS_HOME = 'home'
+PHYS_ADDRESS_BUSINESS = 'business'
+PHYS_ADDRESS_OTHER = 'other'
+PHYS_ADDRESS_DICT = {
+    PHYS_ADDRESS_HOME: {
+        'street': PR_HOME_ADDRESS_STREET_W,
+        'city': PR_HOME_ADDRESS_CITY_W,
+        'postalCode': PR_HOME_ADDRESS_POSTAL_CODE_W,
+        'state': PR_HOME_ADDRESS_STATE_OR_PROVINCE_W,
+        'countryOrRegion': PR_HOME_ADDRESS_COUNTRY_W,
+    },
+    PHYS_ADDRESS_BUSINESS: {
+        'street': PidLidWorkAddressStreet,
+        'city': PidLidWorkAddressCity,
+        'postalCode': PidLidWorkAddressPostalCode,
+        'state': PidLidWorkAddressState,
+        'countryOrRegion': PidLidWorkAddressCountry,
+    },
+    PHYS_ADDRESS_OTHER: {
+        'street': PR_OTHER_ADDRESS_STREET_W,
+        'city': PR_OTHER_ADDRESS_CITY_W,
+        'postalCode': PR_OTHER_ADDRESS_POSTAL_CODE_W,
+        'state': PR_OTHER_ADDRESS_STATE_OR_PROVINCE_W,
+        'countryOrRegion': PR_OTHER_ADDRESS_COUNTRY_W,
+    },
+}
+
+
+def _set_phys_address(item, args: dict, prop_tags: dict):
+    try:
+        is_args_list = True
+        is_proptags_list = True
+        if not isinstance(args, dict):
+            logging.error("args is not a dict")
+            is_args_list = False
+        if not isinstance(prop_tags, dict):
+            logging.error("proptags is not a dict")
+            is_proptags_list = False
+        if not is_args_list or not is_proptags_list:
+            return
+    except NameError:
+        logging.exception('Parameter(s) not defined')
+    for name, arg in args.items():
+        if name in prop_tags:
+            _set_value_by_tag(item, arg, prop_tags[name])
+
+
+def _set_birthday(item, arg: str):
+    if arg.endswith("Z"):
+        arg = arg.replace("Z", "+0000")
+    # TODO must end with + and 4 0's
+    bday = datetime.strptime(arg, '%Y-%m-%dT%H:%M:%S.%f%z')
+    _set_value_by_tag(item, bday, PR_BIRTHDAY)
 
 
 class DeletedContactResource(ItemResource):
@@ -95,14 +163,14 @@ class ContactResource(ItemResource):
         'mobilePhone': lambda item, arg: _set_value_by_tag(item, arg, PR_MOBILE_TELEPHONE_NUMBER_W),
         'personalNotes': lambda item, arg: _set_value_by_tag(item, str(arg), PR_BODY_W),
         'generation': lambda item, arg: _set_value_by_tag(item, arg, PR_GENERATION_W),
-        # 'children': lambda item, arg: set_by_tag(item, arg, PR_CHILDRENS_NAMES_W),
+        'children': lambda item, arg: _set_value_by_tag(item, arg, PR_CHILDRENS_NAMES_W),
         'spouseName': lambda item, arg: _set_value_by_tag(item, arg, PR_SPOUSE_NAME_W),
-        'birthday': lambda item, arg: _set_value_by_tag(item, arg, PR_BIRTHDAY),
+        'birthday': lambda item, arg: _set_birthday(item, arg),
         'initials': lambda item, arg: _set_value_by_tag(item, arg, PR_INITIALS_W),
-        # 'yomiGivenName': lambda item, arg: set_by_tag(item, arg, PidLidYomiFirstName),
-        # 'yomiSurname': lambda item, arg: set_by_tag(item, arg, PidLidYomiLastName),
-        # 'yomiCompanyName': lambda item, arg: set_by_tag(item, arg, PidLidYomiCompanyName),
-        # 'fileAs': lambda item, arg: set_by_tag(item, arg, PidLidFileUnder),
+        'yomiGivenName': lambda item, arg: _set_value_by_tag(item, arg, PidLidYomiFirstName),
+        'yomiSurname': lambda item, arg: _set_value_by_tag(item, arg, PidLidYomiLastName),
+        'yomiCompanyName': lambda item, arg: _set_value_by_tag(item, arg, PidLidYomiCompanyName),
+        'fileAs': lambda item, arg: _set_value_by_tag(item, arg, PidLidFileUnder),
         'jobTitle': lambda item, arg: _set_value_by_tag(item, arg, PR_TITLE_W),
         'department': lambda item, arg: _set_value_by_tag(item, arg, PR_DEPARTMENT_NAME_W),
         'officeLocation': lambda item, arg: _set_value_by_tag(item, arg, PR_OFFICE_LOCATION_W),
@@ -110,30 +178,14 @@ class ContactResource(ItemResource):
         'manager': lambda item, arg: _set_value_by_tag(item, arg, PR_MANAGER_NAME_W),
         'assistantName': lambda item, arg: _set_value_by_tag(item, arg, PR_ASSISTANT_W),
         'businessHomePage': lambda item, arg: _set_value_by_tag(item, arg, PR_BUSINESS_HOME_PAGE_W),
-        # 'homePhones': lambda item, arg: set_by_tag(item, arg, [PR_HOME_TELEPHONE_NUMBER_W, PR_HOME2_TELEPHONE_NUMBER_W]),
-        # 'businessPhones': lambda item, arg: set_by_tag(item, arg, [PR_HOME_TELEPHONE_NUMBER_W, PR_HOME2_TELEPHONE_NUMBER_W]),
-        # 'imAddresses': lambda item, arg: set_by_tag(item, arg, PidLidInstantMessagingAddress),
-        # 'homeAddress': lambda item, arg: set_by_tag(item, arg, [
-        #             PR_HOME_ADDRESS_STREET_W,
-        #             PR_HOME_ADDRESS_CITY_W,
-        #             PR_HOME_ADDRESS_POSTAL_CODE_W,
-        #             PR_HOME_ADDRESS_STATE_OR_PROVINCE_W,
-        #             PR_HOME_ADDRESS_COUNTRY_W,
-        #         ]),
-        # 'businessAddress': lambda item, arg: set_by_tag(item, arg, [
-        #             PidLidWorkAddressStreet,
-        #             PidLidWorkAddressCity,
-        #             PidLidWorkAddressPostalCode,
-        #             PidLidWorkAddressState,
-        #             PidLidWorkAddressCountry,
-        #         ]),
-        # 'otherAddress': lambda item, arg: set_by_tag(item, arg, [
-        #             PR_OTHER_ADDRESS_STREET_W,
-        #             PR_OTHER_ADDRESS_CITY_W,
-        #             PR_OTHER_ADDRESS_POSTAL_CODE_W,
-        #             PR_OTHER_ADDRESS_STATE_OR_PROVINCE_W,
-        #             PR_OTHER_ADDRESS_COUNTRY_W,
-        #         ]),
+        'homePhones': lambda item, arg: _set_value_per_tag(item, arg, [PR_HOME_TELEPHONE_NUMBER_W,
+                                                                       PR_HOME2_TELEPHONE_NUMBER_W]),
+        'businessPhones': lambda item, arg: _set_value_per_tag(item, arg, [PR_BUSINESS_TELEPHONE_NUMBER_W,
+                                                                           PR_BUSINESS2_TELEPHONE_NUMBER_W]),
+        'imAddresses': lambda item, arg: _set_value_by_tag(item, ', '.join(arg), PidLidInstantMessagingAddress),
+        'homeAddress': lambda item, arg: _set_phys_address(item, arg, PHYS_ADDRESS_DICT[PHYS_ADDRESS_HOME]),
+        'businessAddress': lambda item, arg: _set_phys_address(item, arg, PHYS_ADDRESS_DICT[PHYS_ADDRESS_BUSINESS]),
+        'otherAddress': lambda item, arg: _set_phys_address(item, arg, PHYS_ADDRESS_DICT[PHYS_ADDRESS_OTHER]),
     }
 
     deleted_resource = DeletedContactResource
