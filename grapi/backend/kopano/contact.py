@@ -284,6 +284,29 @@ class ContactResource(ItemResource):
         server, store, userid = _server_store(req, userid, self.options)
         handler(req, resp, store=store, server=server, folderid=folderid, itemid=itemid)
 
+    def handle_patch(self, req, resp, store, folder, itemid):
+        item = _item(folder, itemid)
+        fields = self.load_json(req)
+
+        for field, value in fields.items():
+            if field in self.set_fields:
+                self.set_fields[field](item, value)
+
+        self.respond(req, resp, item, ContactResource.fields)
+
+    def on_patch(self, req, resp, userid=None, folderid=None, itemid=None, method=None):
+        handler = None
+
+        if not method:
+            handler = self.handle_patch
+
+        else:
+            raise HTTPBadRequest("Unsupported message segment '%s'" % method)
+
+        server, store, userid = _server_store(req, userid, self.options)
+        folder = _folder(store, folderid or 'contacts')  # TODO all folders?
+        handler(req, resp, store=store, folder=folder, itemid=itemid)
+
     def handle_delete(self, req, resp, store, server, folderid, itemid):
         item = _item(store, itemid)
 
