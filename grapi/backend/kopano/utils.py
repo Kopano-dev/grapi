@@ -372,21 +372,21 @@ def _handle_exception(ex, req):
         raise falcon.HTTPForbidden('No access', None)
 
 
-def _set_value_by_tag(item, arg, tag: str):
+def _set_value_by_tag(item, arg, tag: str) -> None:
     item.create_prop(tag, arg)
 
 
-def _set_value_per_tag(item, args: list, prop_tags: list):
+def _set_value_per_tag(item, args: list, prop_tags: list) -> None:
     try:
         is_args_list = True
-        is_proptags_list = True
+        is_prop_tags_list = True
         if not isinstance(args, list):
             logging.error("args is not a list")
             is_args_list = False
         if not isinstance(prop_tags, list):
-            logging.error("proptags is not a list")
-            is_proptags_list = False
-        if not is_args_list or not is_proptags_list:
+            logging.error("prop_tags is not a list")
+            is_prop_tags_list = False
+        if not is_args_list or not is_prop_tags_list:
             return
     except NameError:
         logging.exception('Parameter(s) not defined')
