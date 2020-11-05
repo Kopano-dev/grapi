@@ -22,12 +22,13 @@ DEFAULT_TOP = 10
 
 def _date(d, local=False, show_time=True):
     if d is None:
-        return '0001-01-01T00:00:00Z'
+        return '0001-01-01T00:00:00.000000Z'
     fmt = '%Y-%m-%d'
     if show_time:
         fmt += 'T%H:%M:%S'
-    if d.microsecond:
-        fmt += '.%f'
+    # Microseconds need to be set
+    # if d.microsecond:
+    fmt += '.%f'
     if not local:
         fmt += 'Z'
     # TODO make pyko not assume naive localtime..
