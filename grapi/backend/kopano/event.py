@@ -310,6 +310,9 @@ class EventResource(ItemResource):
         for field, value in fields.items():
             if field in self.set_fields:
                 self.set_fields[field](item, value)
+        if fields.get('attendees', None):
+            # NOTE(longsleep): Sending can fail with NO_ACCCESS if no permission to outbox.
+            item.send()
 
         self.respond(req, resp, item, EventResource.fields)
 
