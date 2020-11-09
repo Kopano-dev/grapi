@@ -158,7 +158,7 @@ class MessageResource(ItemResource):
         odataType = fields.get('@odata.type', None)
         if odataType == '#microsoft.graph.fileAttachment':  # TODO other types
             att = item.create_attachment(fields['name'], base64.urlsafe_b64decode(fields['contentBytes']))
-            self.respond(req, resp, att, attachment.FileAttachmentResource.fields)
+            self.respond(req, resp, att, attachment.AttachmentResource.fields)
             resp.status = falcon.HTTP_201
         else:
             raise HTTPBadRequest("Unsupported attachment @odata.type: '%s'" % odataType)

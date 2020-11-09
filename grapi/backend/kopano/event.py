@@ -274,10 +274,13 @@ class EventResource(ItemResource):
 
     @experimental
     def handle_post_attachments(self, req, resp, fields, item):
-        if fields['@odata.type'] == '#microsoft.graph.fileAttachment':
+        odataType = fields.get('@odata.type', None)
+        if odataType == '#microsoft.graph.fileAttachment':  # TODO other types
             att = item.create_attachment(fields['name'], base64.urlsafe_b64decode(fields['contentBytes']))
             self.respond(req, resp, att, AttachmentResource.fields)
             resp.status = falcon.HTTP_201
+        else:
+            raise HTTPBadRequest("Unsupported attachment @odata.type: '%s'" % odataType)
 
     def on_post(self, req, resp, userid=None, folderid=None, eventid=None, method=None):
         handler = None
