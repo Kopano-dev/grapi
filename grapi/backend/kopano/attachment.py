@@ -9,9 +9,13 @@ from .utils import _folder, _item, _server_store, experimental
 @experimental
 class AttachmentResource(Resource):
     fields = {
+        '@odata.type': lambda attachment: '#microsoft.graph.attachment',
         'id': lambda attachment: attachment.entryid,
         'lastModifiedDateTime': lambda attachment: _date(attachment.last_modified),
         'size': lambda attachment: attachment.size,
+        'name': lambda attachment: attachment.name,
+        'isInline': lambda attachment: attachment.inline,
+        'contentType': lambda attachment: attachment.mimetype,
     }
 
     # TODO to ItemAttachmentResource
