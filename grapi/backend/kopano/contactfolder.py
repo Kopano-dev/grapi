@@ -24,6 +24,7 @@ class ContactFolderResource(FolderResource):
 
     deleted_resource = DeletedContactFolderResource
     container_classes = ('IPF.Contact',)
+    container_class = 'IPF.Contact'
 
     def handle_get_delta(self, req, resp, store, folderid):
         req.context.deltaid = '{folderid}'

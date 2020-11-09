@@ -256,6 +256,12 @@ class UserResource(Resource):
         folder = store.create_folder(fields['displayName'])  # TODO exception on conflict
         self.respond(req, resp, folder, MailFolderResource.fields)
 
+    @experimental
+    def handle_post_contactFolders(self, req, resp, fields, store):
+        folder = store.create_folder(fields['displayName'])  # TODO exception on conflict
+        folder.container_class = ContactFolderResource.container_class
+        self.respond(req, resp, folder, ContactFolderResource.fields)
+
     # TODO redirect to other resources?
     def on_post(self, req, resp, userid=None, method=None):
         handler = None
@@ -274,6 +280,9 @@ class UserResource(Resource):
 
         elif method == 'mailFolders':
             handler = self.handle_post_mailFolders
+
+        elif method == 'contactFolders':
+            handler = self.handle_post_contactFolders
 
         elif method:
             raise HTTPBadRequest("Unsupported user segment '%s'" % method)
