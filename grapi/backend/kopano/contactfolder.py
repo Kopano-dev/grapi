@@ -40,6 +40,12 @@ class ContactFolderResource(FolderResource):
         fields = ContactResource.fields
         self.respond(req, resp, data, fields)
 
+    def handle_get_childFolders(self, req, resp, store, folderid):
+        data = _folder(store, folderid)
+
+        data = self.generator(req, data.folders, data.subfolder_count_recursive)
+        self.respond(req, resp, data)
+
     def on_get(self, req, resp, userid=None, folderid=None, method=None):
         handler = None
 
@@ -51,6 +57,9 @@ class ContactFolderResource(FolderResource):
 
             elif method == 'contacts':
                 handler = self.handle_get_contacts
+
+            elif method == 'childFolders':
+                handler = self.handle_get_childFolders
 
             elif method:
                 raise HTTPBadRequest("Unsupported contactfolder segment '%s'" % method)
@@ -69,11 +78,21 @@ class ContactFolderResource(FolderResource):
         self.respond(req, resp, item, ContactResource.fields)
         resp.status = falcon.HTTP_201
 
+    def handle_post_childFolders(self, req, resp, store, folderid):
+        folder = _folder(store, folderid)
+        fields = self.load_json(req)
+        child = folder.create_folder(fields['displayName'])  # TODO exception on conflict
+        child.container_class = ContactFolderResource.container_class
+        self.respond(req, resp, child, ContactFolderResource.fields)
+
     def on_post(self, req, resp, userid=None, folderid=None, method=None):
         handler = None
 
         if method == 'contacts':
             handler = self.handle_post_contacts
+
+        elif method == 'childFolders':
+            handler = self.handle_post_childFolders
 
         elif method:
             raise HTTPBadRequest("Unsupported contactfolder segment '%s'" % method)
