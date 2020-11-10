@@ -146,11 +146,25 @@ class MessageResource(ItemResource):
         handler(req, resp, store=store, folder=folder, itemid=itemid)
 
     def handle_post_createReply(self, req, resp, store, folder, item):
-        self.respond(req, resp, item.reply())
-        resp.status = falcon.HTTP_201
+        self._handle_post_createRaplyOrCreateReplyAll(req, resp, store, folder, item, False)
 
     def handle_post_createReplyAll(self, req, resp, store, folder, item):
-        self.respond(req, resp, item.reply(all=True))
+        self._handle_post_createRaplyOrCreateReplyAll(req, resp, store, folder, item, True)
+
+    def _handle_post_createRaplyOrCreateReplyAll(self, req, resp, store, folder, item, replyAll: bool):
+        fields = self.load_json(req)
+        if 'message' in fields:
+            fields = fields['message']
+        else:
+            fields = {}
+        logging.info(fields)
+        new_item = item.reply(all=replyAll)
+        for field in self.set_fields:
+            if field in fields:
+                self.set_fields[field](new_item, fields[field])
+
+        logging.info(new_item.body)
+        self.respond(req, resp, new_item, MessageResource.fields)
         resp.status = falcon.HTTP_201
 
     def handle_post_attachments(self, req, resp, store, folder, item):
@@ -184,22 +198,22 @@ class MessageResource(ItemResource):
     def on_post(self, req, resp, userid=None, folderid=None, itemid=None, method=None):
         handler = None
 
-        if method == 'createReply':
-            handler = self.handle_post_creatReply
+        if method == 'createReply' or method == 'microsoft.graph.createReply':
+            handler = self.handle_post_createReply
 
-        elif method == 'createReplyAll':
+        elif method == 'createReplyAll' or method == 'microsoft.graph.createReplyAll':
             handler = self.handle_post_createReplyAll
 
         elif method == 'attachments':
             handler = self.handle_post_attachments
 
-        elif method == 'copy':
+        elif method == 'copy' or method == 'microsoft.graph.copy':
             handler = self.handle_post_copy
 
-        elif method == 'move':
+        elif method == 'move' or method == 'microsoft.graph.move':
             handler = self.handle_post_move
 
-        elif method == 'send':
+        elif method == 'send' or method == 'microsoft.graph.send':
             handler = self.handle_post_send
 
         elif method:
