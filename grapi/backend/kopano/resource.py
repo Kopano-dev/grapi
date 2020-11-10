@@ -86,19 +86,7 @@ def parse_datetime_timezone(datetime_timezone, field):
 
 
 def set_date(item, field, arg):
-    try:
-        tz = to_timezone(arg.get('timeZone', 'UTC'))
-    except Exception:
-        logging.debug('failed to parse timezone value when setting date to \'%s\'', field)
-        raise HTTPBadRequest('The timeZone value of field \'%s\' is not supported.' % field)
-    try:
-        d = dateutil.parser.parse(arg['dateTime'], ignoretz=True)
-    except ValueError:
-        logging.debug('failed to parse date when setting to \'%s\'', exc_info=True)
-        raise HTTPBadRequest('The date value of field \'%s\' is invalid.' % field)
-
-    # Set timezone as provided and convert to naive LOCAL time since that is what pyko uses internally.
-    d = tz.localize(d).astimezone(LOCAL).replace(tzinfo=None)
+    d = parse_datetime_timezone(arg, field)
     setattr(item, field, d)
 
 
