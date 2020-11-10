@@ -2,6 +2,7 @@
 import base64
 
 import falcon
+import logging
 
 from MAPI.Tags import (
     PR_ATTACHMENT_CONTACTPHOTO, PR_GIVEN_NAME_W, PR_MIDDLE_NAME_W,
@@ -17,16 +18,16 @@ from MAPI.Tags import (
     PR_HOME_ADDRESS_COUNTRY_W, PR_OTHER_ADDRESS_STREET_W,
     PR_OTHER_ADDRESS_CITY_W, PR_OTHER_ADDRESS_POSTAL_CODE_W,
     PR_OTHER_ADDRESS_STATE_OR_PROVINCE_W, PR_OTHER_ADDRESS_COUNTRY_W,
-    PR_READ_RECEIPT_REQUESTED,
+    PR_READ_RECEIPT_REQUESTED, PR_FLAG_STATUS, PR_FLAG_COMPLETE_TIME
 )
 
 from . import attachment  # import as module since this is a circular import
 from .item import ItemResource, get_body, get_email, set_body
-from .resource import DEFAULT_TOP, _date
+from .resource import DEFAULT_TOP, _date, parse_datetime_timezone, _tzdate
 from .utils import HTTPBadRequest, _folder, _item, _server_store, _set_value_by_tag, experimental
 
 
-def set_torecipients(item, arg):
+def set_torecipients(item, arg: dict) -> None:
     addrs = []
     for a in arg:
         a = a['emailAddress']
@@ -34,7 +35,7 @@ def set_torecipients(item, arg):
     item.to = ';'.join(addrs)
 
 
-def set_ccrecipients(item, arg):
+def set_ccrecipients(item, arg: dict) -> None:
     addrs = []
     for a in arg:
         a = a['emailAddress']
@@ -42,12 +43,103 @@ def set_ccrecipients(item, arg):
     item.cc = ';'.join(addrs)
 
 
-def set_bccrecipients(item, arg):
+def set_bccrecipients(item, arg: dict) -> None:
     addrs = []
     for a in arg:
         a = a['emailAddress']
         addrs.append('%s <%s>' % (a.get('name', a['address']), a['address']))
     item.bcc = ';'.join(addrs)
+
+
+PR_MESSAGE_DUE_DATE = "PT_SYSTIME:PSETID_Task:0x8105"
+PR_MESSAGE_START_DATE = "PT_SYSTIME:PSETID_Task:0x8104"
+
+MESSAGE_FLAG_STATUS_KEY = 'flagStatus'
+MESSAGE_FLAG_STATUS_NOT_FLAGGED = 'notFlagged'
+MESSAGE_FLAG_STATUS_KEY_COMPLETE = 'complete'
+MESSAGE_FLAG_STATUS_KEY_FLAGGED = 'flagged'
+MESSAGE_FLAG_COMPLETE_TIME_KEY = 'completedDateTime'
+MESSAGE_FLAG_DUE_DATE_KEY = "dueDateTime"
+MESSAGE_FLAG_START_DATE_KEY = "startDateTime"
+
+
+def _get_flag(req, item) -> dict:
+    flag = {}
+    # Get flag status
+    try:
+        status = item.get(PR_FLAG_STATUS)
+        if isinstance(status, int):
+            if status == 0:
+                flag[MESSAGE_FLAG_STATUS_KEY] = MESSAGE_FLAG_STATUS_NOT_FLAGGED
+            if status == 1:
+                flag[MESSAGE_FLAG_STATUS_KEY] = MESSAGE_FLAG_STATUS_KEY_COMPLETE
+            if status == 2:
+                flag[MESSAGE_FLAG_STATUS_KEY] = MESSAGE_FLAG_STATUS_KEY_FLAGGED
+    except NameError:
+        logging.info("Item flag status not set")
+    # Get complete time
+    try:
+        complete = item.get(PR_FLAG_COMPLETE_TIME)
+        flag[MESSAGE_FLAG_COMPLETE_TIME_KEY] = _tzdate(complete, item.tzinfo, req)
+    except NameError:
+        logging.info("Item flag complete time not set")
+    # Get start date
+    try:
+        start = item.get(PR_MESSAGE_START_DATE)
+        flag[MESSAGE_FLAG_START_DATE_KEY] = _tzdate(start, item.tzinfo, req)
+    except NameError:
+        logging.info("Item flag complete time not set")
+    # Get due date
+    try:
+        due = item.get(PR_MESSAGE_DUE_DATE)
+        flag[MESSAGE_FLAG_DUE_DATE_KEY] = _tzdate(due, item.tzinfo, req)
+    except NameError:
+        logging.info("Item flag complete time not set")
+    return flag
+
+
+def _set_flag(item, arg: dict) -> None:
+    # Set flag status
+    if MESSAGE_FLAG_STATUS_KEY in arg:
+        if arg[MESSAGE_FLAG_STATUS_KEY] == MESSAGE_FLAG_STATUS_NOT_FLAGGED:
+            _set_value_by_tag(item, 0, PR_FLAG_STATUS)
+        if arg[MESSAGE_FLAG_STATUS_KEY] == MESSAGE_FLAG_STATUS_KEY_COMPLETE:
+            _set_value_by_tag(item, 1, PR_FLAG_STATUS)
+        if arg[MESSAGE_FLAG_STATUS_KEY] == MESSAGE_FLAG_STATUS_KEY_FLAGGED:
+            _set_value_by_tag(item, 2, PR_FLAG_STATUS)
+
+    # Set complete time
+    if MESSAGE_FLAG_COMPLETE_TIME_KEY in arg:
+        _set_value_by_tag(
+            item,
+            parse_datetime_timezone(
+                arg[MESSAGE_FLAG_COMPLETE_TIME_KEY],
+                MESSAGE_FLAG_COMPLETE_TIME_KEY
+            ),
+            PR_FLAG_COMPLETE_TIME
+        )
+
+    # Set due date
+    if MESSAGE_FLAG_DUE_DATE_KEY in arg:
+        _set_value_by_tag(
+            item,
+            parse_datetime_timezone(
+                arg[MESSAGE_FLAG_DUE_DATE_KEY],
+                MESSAGE_FLAG_COMPLETE_TIME_KEY
+            ),
+            PR_MESSAGE_DUE_DATE
+        )
+
+    # Set start date
+    if MESSAGE_FLAG_START_DATE_KEY in arg:
+        _set_value_by_tag(
+            item,
+            parse_datetime_timezone(
+                arg[MESSAGE_FLAG_START_DATE_KEY],
+                MESSAGE_FLAG_COMPLETE_TIME_KEY
+            ),
+            PR_MESSAGE_START_DATE
+        )
 
 
 class DeletedMessageResource(ItemResource):
@@ -67,6 +159,7 @@ class MessageResource(ItemResource):
         '@odata.type': lambda item: '#microsoft.graph.eventMessage' if item.message_class.startswith('IPM.Schedule.Meeting.') else None,
         'subject': lambda item: item.subject,
         'body': lambda req, item: get_body(req, item),
+        'flag': lambda req, item: _get_flag(req, item),
         'from': lambda item: get_email(item.from_),
         'sender': lambda item: get_email(item.sender),
         'toRecipients': lambda item: [get_email(to) for to in item.to],
@@ -97,6 +190,7 @@ class MessageResource(ItemResource):
         # 'isDeliveryReceiptRequested': lambda item, arg: setattr(item, 'read_receipt', arg),
         'isDeliveryReceiptRequested': lambda item, arg: _set_value_by_tag(item, arg, PR_READ_RECEIPT_REQUESTED),
         # 'bodyPreview': lambda item, arg: _set_value_by_tag(item, arg, PR_BODY_W),
+        'flag': lambda item, arg: _set_flag(item, arg),
 
     }
 
