@@ -262,6 +262,12 @@ class UserResource(Resource):
         folder.container_class = ContactFolderResource.container_class
         self.respond(req, resp, folder, ContactFolderResource.fields)
 
+    @experimental
+    def handle_post_calendars(self, req, resp, fields, store):
+        folder = store.create_folder(fields['name'])  # TODO exception on conflict
+        folder.container_class = CalendarResource.container_class
+        self.respond(req, resp, folder, CalendarResource.fields)
+
     # TODO redirect to other resources?
     def on_post(self, req, resp, userid=None, method=None):
         handler = None
@@ -283,6 +289,9 @@ class UserResource(Resource):
 
         elif method == 'contactFolders':
             handler = self.handle_post_contactFolders
+
+        elif method == 'calendars':
+            handler = self.handle_post_calendars
 
         elif method:
             raise HTTPBadRequest("Unsupported user segment '%s'" % method)

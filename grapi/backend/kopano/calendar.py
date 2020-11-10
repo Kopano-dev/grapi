@@ -25,6 +25,9 @@ class CalendarResource(FolderResource):
         'name': lambda folder: folder.name,
     })
 
+    container_classes = ('IPF.Appointment',)
+    container_class = 'IPF.Appointment'
+
     def handle_get_calendarView(self, req, resp, folder):
         start, end = _start_end(req)
 
