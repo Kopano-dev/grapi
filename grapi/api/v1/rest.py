@@ -63,6 +63,16 @@ class BackendMiddleware:
                 'photos'
             ):
                 backend = self.default_backend.get('directory')
+            elif method in (
+                'notebooks',
+                'notes'
+            ):
+                backend = self.default_backend.get('note')
+            elif method in (
+                'tasks',
+                'todolists'
+            ):
+                backend = self.default_backend.get('task')
             else:
                 backend = self.default_backend.get('calendar')
 
@@ -100,14 +110,14 @@ class RestAPI(API):
         # And specifying it in backends.
         backend_types = {
             'ldap': ['directory'],
-            'kopano': ['directory', 'mail', 'calendar'],
+            'kopano': ['directory', 'mail', 'calendar', 'note', 'todo'],
             'imap': ['mail'],
             'caldav': ['calendar'],
             'mock': ['mail', 'directory'],
         }
 
         default_backend = {}
-        for type_ in ('directory', 'mail', 'calendar'):
+        for type_ in ('directory', 'mail', 'calendar', 'note', 'todo'):
             for name, types in backend_types.items():
                 if name in backends and type_ in types:
                     default_backend[type_] = name_backend[name]  # TODO type occurs twice
@@ -184,3 +194,29 @@ class RestAPI(API):
                 self.route(user+'/events/{eventid}/attachments/{attachmentid}', calendar_attachments)  # TODO other routes
                 self.route(user+'/calendar/events/{eventid}/attachments/{attachmentid}', calendar_attachments)
                 self.route(user+'/calendars/{folderid}/events/{eventid}/attachments/{attachmentid}', calendar_attachments)
+
+        note = default_backend.get('note')
+        if note:
+            notes = BackendResource(note, 'NoteResource')
+            note_attachment = BackendResource(note, 'AttachmentResource')
+            notebooks = BackendResource(note, 'NotebookResource')
+
+            for user in (PREFIX+'/me', PREFIX+'/users/{userid}'):
+                self.route(user+'/notebooks/{folderid}', notebooks)
+                self.route(user+'/notes/{itemid}', notes)
+                self.route(user+'/notebooks/{folderid}/notes/{itemid}', notes)
+                self.route(user+'/notes/{itemid}/attachments/{attachmentid}', note_attachment)
+                self.route(user+'/notebooks/{folderid}/notes/{itemid}/attachments/{attachmentid}', note_attachment)
+
+        todo = default_backend.get('todo')
+        if todo:
+            tasks = BackendResource(todo, 'TaskResource')
+            todo_attachment = BackendResource(todo, 'AttachmentResource')
+            todo_lists = BackendResource(todo, 'TodoListResource')
+
+            for user in (PREFIX+'/me', PREFIX+'/users/{userid}'):
+                self.route(user+'/todolists/{folderid}', todo_lists)
+                self.route(user+'/tasks/{itemid}', tasks)
+                self.route(user+'/todolists/{folderid}/tasks/{itemid}', tasks)
+                self.route(user+'/tasks/{itemid}/attachments/{attachmentid}', todo_attachment)
+                self.route(user+'/todolists/{folderid}/tasks/{itemid}/attachments/{attachmentid}', todo_attachment)

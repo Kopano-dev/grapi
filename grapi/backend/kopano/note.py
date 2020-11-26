@@ -26,31 +26,7 @@ from .item import ItemResource, get_body, get_email, set_body
 from .resource import DEFAULT_TOP, _date, parse_datetime_timezone, _tzdate
 from .utils import HTTPBadRequest, _folder, _item, _server_store, _set_value_by_tag, experimental
 
-
-def set_torecipients(item, arg: dict) -> None:
-    addrs = []
-    for a in arg:
-        a = a['emailAddress']
-        addrs.append('%s <%s>' % (a.get('name', a['address']), a['address']))
-    item.to = ';'.join(addrs)
-
-
-def set_ccrecipients(item, arg: dict) -> None:
-    addrs = []
-    for a in arg:
-        a = a['emailAddress']
-        addrs.append('%s <%s>' % (a.get('name', a['address']), a['address']))
-    item.cc = ';'.join(addrs)
-
-
-def set_bccrecipients(item, arg: dict) -> None:
-    addrs = []
-    for a in arg:
-        a = a['emailAddress']
-        addrs.append('%s <%s>' % (a.get('name', a['address']), a['address']))
-    item.bcc = ';'.join(addrs)
-
-
+# TODO refactor redundant code
 PR_MESSAGE_DUE_DATE = "PT_SYSTIME:PSETID_Task:0x8105"
 PR_MESSAGE_START_DATE = "PT_SYSTIME:PSETID_Task:0x8104"
 
@@ -98,65 +74,21 @@ def _get_flag(req, item) -> dict:
     return flag
 
 
-def _set_flag(item, arg: dict) -> None:
-    # Set flag status
-    if MESSAGE_FLAG_STATUS_KEY in arg:
-        if arg[MESSAGE_FLAG_STATUS_KEY] == MESSAGE_FLAG_STATUS_NOT_FLAGGED:
-            _set_value_by_tag(item, 0, PR_FLAG_STATUS)
-        if arg[MESSAGE_FLAG_STATUS_KEY] == MESSAGE_FLAG_STATUS_KEY_COMPLETE:
-            _set_value_by_tag(item, 1, PR_FLAG_STATUS)
-        if arg[MESSAGE_FLAG_STATUS_KEY] == MESSAGE_FLAG_STATUS_KEY_FLAGGED:
-            _set_value_by_tag(item, 2, PR_FLAG_STATUS)
-
-    # Set complete time
-    if MESSAGE_FLAG_COMPLETE_TIME_KEY in arg:
-        _set_value_by_tag(
-            item,
-            parse_datetime_timezone(
-                arg[MESSAGE_FLAG_COMPLETE_TIME_KEY],
-                MESSAGE_FLAG_COMPLETE_TIME_KEY
-            ),
-            PR_FLAG_COMPLETE_TIME
-        )
-
-    # Set due date
-    if MESSAGE_FLAG_DUE_DATE_KEY in arg:
-        _set_value_by_tag(
-            item,
-            parse_datetime_timezone(
-                arg[MESSAGE_FLAG_DUE_DATE_KEY],
-                MESSAGE_FLAG_COMPLETE_TIME_KEY
-            ),
-            PR_MESSAGE_DUE_DATE
-        )
-
-    # Set start date
-    if MESSAGE_FLAG_START_DATE_KEY in arg:
-        _set_value_by_tag(
-            item,
-            parse_datetime_timezone(
-                arg[MESSAGE_FLAG_START_DATE_KEY],
-                MESSAGE_FLAG_COMPLETE_TIME_KEY
-            ),
-            PR_MESSAGE_START_DATE
-        )
-
-
-class DeletedMessageResource(ItemResource):
+class DeletedNoteResource(ItemResource):
     fields = {
-        '@odata.type': lambda item: '#microsoft.graph.message',  # TODO
+        '@odata.type': lambda item: '#microsoft.graph.note',  # TODO
         'id': lambda item: item.entryid,
         '@removed': lambda item: {'reason': 'deleted'}  # TODO soft deletes
     }
 
 
 @experimental
-class MessageResource(ItemResource):
+class NoteResource(ItemResource):
     fields = ItemResource.fields.copy()
     fields.update({
         # TODO pyko shortcut for event messages
         # TODO eventMessage resource?
-        '@odata.type': lambda item: '#microsoft.graph.eventMessage' if item.message_class.startswith('IPM.Schedule.Meeting.') else None,
+        '@odata.type': lambda item: '#microsoft.graph.note' if item.message_class.startswith('IPM.Schedule.Meeting.') else None,
         'subject': lambda item: item.subject,
         'body': lambda req, item: get_body(req, item),
         'flag': lambda req, item: _get_flag(req, item),
@@ -182,23 +114,15 @@ class MessageResource(ItemResource):
     set_fields = {
         'subject': lambda item, arg: setattr(item, 'subject', arg),
         'body': set_body,
-        'toRecipients': set_torecipients,
         'isRead': lambda item, arg: setattr(item, 'read', arg),
-        'ccRecipients': set_ccrecipients,
-        'bccRecipients': set_bccrecipients,
         'importance': lambda item, arg: setattr(item, 'urgency', arg),
-        # 'isDeliveryReceiptRequested': lambda item, arg: setattr(item, 'read_receipt', arg),
-        'isDeliveryReceiptRequested': lambda item, arg: _set_value_by_tag(item, arg, PR_READ_RECEIPT_REQUESTED),
-        # 'bodyPreview': lambda item, arg: _set_value_by_tag(item, arg, PR_BODY_W),
-        'flag': lambda item, arg: _set_flag(item, arg),
-
     }
-    message_class = 'IPM.Note'
+    message_class = 'IPM.StickyNote'
 
-    deleted_resource = DeletedMessageResource
+    deleted_resource = DeletedNoteResource
 
     relations = {
-        'attachments': lambda message: (message.attachments, attachment.FileAttachmentResource),  # TODO embedded
+        'attachments': lambda note: (note.attachments, attachment.FileAttachmentResource),  # TODO embedded
     }
 
     def handle_get(self, req, resp, store, folder, itemid):
@@ -215,62 +139,21 @@ class MessageResource(ItemResource):
         item = _item(folder, itemid)
         self.respond(req, resp, item)
 
-    def handle_get_attachments(self, req, resp, store, folder, itemid):
-        item = _item(folder, itemid)
-        attachments = list(attachment.get_attachments(item))
-        data = (attachments, DEFAULT_TOP, 0, len(attachments))
-        self.respond(req, resp, data)
-
     def on_get(self, req, resp, userid=None, folderid=None, itemid=None, method=None):
         handler = None
 
         if not method:
             handler = self.handle_get
 
-        elif method == 'attachments':
-            handler = self.handle_get_attachments
-
         elif method:
-            raise HTTPBadRequest("Unsupported message segment '%s'" % method)
+            raise HTTPBadRequest("Unsupported note segment '%s'" % method)
 
         else:
-            raise HTTPBadRequest("Unsupported in message")
+            raise HTTPBadRequest("Unsupported in note")
 
         server, store, userid = _server_store(req, userid, self.options)
-        folder = _folder(store, folderid or 'inbox')  # TODO all folders?
+        folder = _folder(store, folderid or 'notes')  # TODO all folders?
         handler(req, resp, store=store, folder=folder, itemid=itemid)
-
-    def handle_post_createReply(self, req, resp, store, folder, item):
-        self._handle_post_createRaplyOrCreateReplyAll(req, resp, store, folder, item, False)
-
-    def handle_post_createReplyAll(self, req, resp, store, folder, item):
-        self._handle_post_createRaplyOrCreateReplyAll(req, resp, store, folder, item, True)
-
-    def _handle_post_createRaplyOrCreateReplyAll(self, req, resp, store, folder, item, replyAll: bool):
-        fields = self.load_json(req)
-        if 'message' in fields:
-            fields = fields['message']
-        else:
-            fields = {}
-        logging.info(fields)
-        new_item = item.reply(all=replyAll)
-        for field in self.set_fields:
-            if field in fields:
-                self.set_fields[field](new_item, fields[field])
-
-        logging.info(new_item.body)
-        self.respond(req, resp, new_item, MessageResource.fields)
-        resp.status = falcon.HTTP_201
-
-    def handle_post_attachments(self, req, resp, store, folder, item):
-        fields = self.load_json(req)
-        odataType = fields.get('@odata.type', None)
-        if odataType == '#microsoft.graph.fileAttachment':  # TODO other types
-            att = item.create_attachment(fields['name'], base64.urlsafe_b64decode(fields['contentBytes']))
-            self.respond(req, resp, att, attachment.AttachmentResource.fields)
-            resp.status = falcon.HTTP_201
-        else:
-            raise HTTPBadRequest("Unsupported attachment @odata.type: '%s'" % odataType)
 
     def handle_post_copy(self, req, resp, store, folder, item):
         self._handle_post_copyOrMove(req, resp, store=store, item=item)
@@ -286,30 +169,14 @@ class MessageResource(ItemResource):
         else:
             item = item.move(to_folder)
 
-    def handle_post_send(self, req, resp, store, folder, item):
-        item.send()
-        resp.status = falcon.HTTP_202
-
     def on_post(self, req, resp, userid=None, folderid=None, itemid=None, method=None):
         handler = None
 
-        if method == 'createReply' or method == 'microsoft.graph.createReply':
-            handler = self.handle_post_createReply
-
-        elif method == 'createReplyAll' or method == 'microsoft.graph.createReplyAll':
-            handler = self.handle_post_createReplyAll
-
-        elif method == 'attachments':
-            handler = self.handle_post_attachments
-
-        elif method == 'copy' or method == 'microsoft.graph.copy':
+        if method == 'copy' or method == 'microsoft.graph.copy':
             handler = self.handle_post_copy
 
         elif method == 'move' or method == 'microsoft.graph.move':
             handler = self.handle_post_move
-
-        elif method == 'send' or method == 'microsoft.graph.send':
-            handler = self.handle_post_send
 
         elif method:
             raise HTTPBadRequest("Unsupported message segment '%s'" % method)
@@ -318,7 +185,7 @@ class MessageResource(ItemResource):
             raise HTTPBadRequest("Unsupported in message")
 
         server, store, userid = _server_store(req, userid, self.options)
-        folder = _folder(store, folderid or 'inbox')  # TODO all folders?
+        folder = _folder(store, folderid or 'notes')  # TODO all folders?
         item = _item(folder, itemid)
         handler(req, resp, store=store, folder=folder, item=item)
 
@@ -330,7 +197,7 @@ class MessageResource(ItemResource):
             if field in self.set_fields:
                 self.set_fields[field](item, value)
 
-        self.respond(req, resp, item, MessageResource.fields)
+        self.respond(req, resp, item, NoteResource.fields)
 
     def on_patch(self, req, resp, userid=None, folderid=None, itemid=None, method=None):
         handler = None
@@ -339,10 +206,10 @@ class MessageResource(ItemResource):
             handler = self.handle_patch
 
         else:
-            raise HTTPBadRequest("Unsupported message segment '%s'" % method)
+            raise HTTPBadRequest("Unsupported note segment '%s'" % method)
 
         server, store, userid = _server_store(req, userid, self.options)
-        folder = _folder(store, folderid or 'inbox')  # TODO all folders?
+        folder = _folder(store, folderid or 'notes')  # TODO all folders?
         handler(req, resp, store=store, folder=folder, itemid=itemid)
 
     def handle_delete(self, req, resp, store, itemid):
@@ -359,14 +226,14 @@ class MessageResource(ItemResource):
             handler = self.handle_delete
 
         else:
-            raise HTTPBadRequest("Unsupported message segment '%s'" % method)
+            raise HTTPBadRequest("Unsupported note segment '%s'" % method)
 
         server, store, userid = _server_store(req, userid, self.options)
         handler(req, resp, store=store, itemid=itemid)
 
 
-class EmbeddedMessageResource(MessageResource):
-    fields = MessageResource.fields.copy()
+class EmbeddedNoteResource(NoteResource):
+    fields = NoteResource.fields.copy()
     fields.update({
         'id': lambda item: '',
     })

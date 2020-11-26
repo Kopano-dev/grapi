@@ -7,6 +7,11 @@ import dateutil.parser
 import pytz
 import tzlocal
 
+from kopano import Restriction
+from MAPI import RELOP_EQ
+from MAPI.Struct import ( SPropertyRestriction, MAPIErrorInvalidEntryid, SPropValue )
+from MAPI.Tags import PR_CONTAINER_CLASS_W
+
 from grapi.api.v1.resource import HTTPBadRequest
 from grapi.api.v1.resource import Resource as BaseResource
 from grapi.api.v1.resource import _dumpb_json, _encode_qs, _parse_qs
@@ -209,7 +214,7 @@ class Resource(BaseResource):
 
             resp.body = self.json(req, obj, fields, all_fields or self.fields, expand=expand)
 
-    def generator(self, req, generator, count=0):
+    def generator(self, req, generator, count=0, container_class: str = None):
         # determine pagination and ordering
         args = _parse_qs(req)
         top = int(args['$top'][0]) if '$top' in args else DEFAULT_TOP
@@ -217,7 +222,13 @@ class Resource(BaseResource):
         order = args['$orderby'][0].split(',') if '$orderby' in args else None
         if order:
             order = tuple(('-' if len(o.split()) > 1 and o.split()[1] == 'desc' else '')+o.split()[0] for o in order)
-        return (generator(page_start=skip, page_limit=top, order=order), top, skip, count)
+        restriction = None
+        if container_class:
+            restriction = Restriction(SPropertyRestriction(
+                RELOP_EQ, PR_CONTAINER_CLASS_W,
+                SPropValue(PR_CONTAINER_CLASS_W, container_class)
+            ))
+        return (generator(restriction=restriction, page_start=skip, page_limit=top, order=order), top, skip, count)
 
     def create_message(self, folder, fields, all_fields=None):
         # TODO item.update and/or only save in the end

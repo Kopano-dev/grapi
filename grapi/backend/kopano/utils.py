@@ -337,6 +337,10 @@ def _folder(store, folderid):
         return store.junk
     elif name == 'sentitems':
         return store.sentmail
+    elif name == 'notes':
+        return store.notes
+    elif name == 'notes':
+        return store.tasks
     else:
         try:
             return store.folder(entryid=folderid)

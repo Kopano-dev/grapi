@@ -13,10 +13,14 @@ from .contactfolder import ContactFolderResource
 from .event import EventResource
 from .mailfolder import MailFolderResource
 from .message import MessageResource
+from .note import NoteResource
+from .notebook import NotebookResource
 from .profilephoto import ProfilePhotoResource
 from .reminder import ReminderResource
 from .resource import DEFAULT_TOP, Resource, _start_end
 from .schema import event_schema
+from .task import TaskResource
+from .todolist import TodoListResource
 from .utils import HTTPBadRequest, HTTPNotFound, _server_store, experimental
 
 
@@ -90,7 +94,7 @@ class UserResource(Resource):
         try:
             company = server.user(userid=userid).company
         except kopano.errors.NotFoundError:
-            logging.warn('failed to get company for user %s', userid, exc_info=True)
+            logging.warning('failed to get company for user %s', userid, exc_info=True)
             raise HTTPNotFound(description="The company wasn't found")
         query = None
         if '$search' in args:
@@ -107,6 +111,16 @@ class UserResource(Resource):
         self.respond(req, resp, data, MailFolderResource.fields)
 
     @experimental
+    def handle_get_notebooks(self, req, resp, store, server, userid):
+        data = self.generator(req, store.folders, 0, NotebookResource.container_class)
+        self.respond(req, resp, data, NotebookResource.fields)
+
+    @experimental
+    def handle_get_todo_lists(self, req, resp, store, server, userid):
+        data = self.generator(req, store.folders, 0, TodoListResource.container_class)
+        self.respond(req, resp, data, NotebookResource.fields)
+
+    @experimental
     def handle_get_contactFolders(self, req, resp, store, server, userid):
         data = self.generator(req, store.contact_folders, 0)
         self.respond(req, resp, data, ContactFolderResource.fields)
@@ -115,6 +129,16 @@ class UserResource(Resource):
     def handle_get_messages(self, req, resp, store, server, userid):
         data = self.folder_gen(req, store.inbox)
         self.respond(req, resp, data, MessageResource.fields)
+
+    @experimental
+    def handle_get_notes(self, req, resp, store, server, userid):
+        data = self.folder_gen(req, store.notes)
+        self.respond(req, resp, data, NoteResource.fields)
+
+    @experimental
+    def handle_get_tasks(self, req, resp, store, server, userid):
+        data = self.folder_gen(req, store.tasks)
+        self.respond(req, resp, data, TaskResource.fields)
 
     @experimental
     def handle_get_contacts(self, req, resp, store, server, userid):
@@ -178,11 +202,23 @@ class UserResource(Resource):
         elif method == 'mailFolders':
             handler = self.handle_get_mailFolders
 
+        elif method == 'notebooks':
+            handler = self.handle_get_notebooks
+
+        elif method == 'todolists':
+            handler = self.handle_get_todo_lists
+
         elif method == 'contactFolders':
             handler = self.handle_get_contactFolders
 
         elif method == 'messages':  # TODO store-wide?
             handler = self.handle_get_messages
+
+        elif method == 'notes':  # TODO store-wide?
+            handler = self.handle_get_notes
+
+        elif method == 'tasks':  # TODO store-wide?
+            handler = self.handle_get_tasks
 
         elif method == 'contacts':
             handler = self.handle_get_contacts
@@ -235,7 +271,7 @@ class UserResource(Resource):
     @experimental
     def handle_post_messages(self, req, resp, fields, store):
         item = self.create_message(store.drafts, fields, MessageResource.set_fields)
-        item.message_class = 'IPM.Note'  # Set message class to fix broken message
+        item.message_class = MessageResource.message_class  # Set message class to fix broken message
         self.respond(req, resp, item, MessageResource.fields)
 
     @experimental
@@ -250,6 +286,18 @@ class UserResource(Resource):
             # NOTE(longsleep): Sending can fail with NO_ACCCESS if no permission to outbox.
             item.send()
         self.respond(req, resp, item, EventResource.fields)
+
+    @experimental
+    def handle_post_notes(self, req, resp, fields, store):
+        item = self.create_message(store.notes, fields, NoteResource.set_fields)
+        item.message_class = NoteResource.message_class
+        self.respond(req, resp, item, NoteResource.fields)
+
+    @experimental
+    def handle_post_tasks(self, req, resp, fields, store):
+        item = self.create_message(store.tasks, fields, TaskResource.set_fields)
+        item.message_class = TaskResource.message_class
+        self.respond(req, resp, item, TaskResource.fields)
 
     @experimental
     def handle_post_mailFolders(self, req, resp, fields, store):
@@ -268,6 +316,18 @@ class UserResource(Resource):
         folder.container_class = CalendarResource.container_class
         self.respond(req, resp, folder, CalendarResource.fields)
 
+    @experimental
+    def handle_post_notebooks(self, req, resp, fields, store):
+        folder = store.create_folder(fields['displayName'])  # TODO exception on conflict
+        folder.container_class = NotebookResource.container_class
+        self.respond(req, resp, folder, NotebookResource.fields)
+
+    @experimental
+    def handle_post_todo_lists(self, req, resp, fields, store):
+        folder = store.create_folder(fields['displayName'])  # TODO exception on conflict
+        folder.container_class = TodoListResource.container_class
+        self.respond(req, resp, folder, TodoListResource.fields)
+
     # TODO redirect to other resources?
     def on_post(self, req, resp, userid=None, method=None):
         handler = None
@@ -284,6 +344,12 @@ class UserResource(Resource):
         elif method == 'events':
             handler = self.handle_post_events
 
+        elif method == 'notes':
+            handler = self.handle_post_notes
+
+        elif method == 'tasks':
+            handler = self.handle_post_tasks
+
         elif method == 'mailFolders':
             handler = self.handle_post_mailFolders
 
@@ -292,6 +358,12 @@ class UserResource(Resource):
 
         elif method == 'calendars':
             handler = self.handle_post_calendars
+
+        elif method == 'notebooks':
+            handler = self.handle_post_notebooks
+
+        elif method == 'todolists':
+            handler = self.handle_post_todo_lists
 
         elif method:
             raise HTTPBadRequest("Unsupported user segment '%s'" % method)

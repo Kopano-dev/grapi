@@ -13,6 +13,10 @@ from .event import EventResource  # noqa: F401
 from .group import GroupResource  # noqa: F401
 from .mailfolder import MailFolderResource  # noqa: F401
 from .message import MessageResource  # noqa: F401
+from .note import NoteResource
+from .notebook import NotebookResource
+from .task import TaskResource
+from .todolist import TodoListResource
 from .profilephoto import ProfilePhotoResource  # noqa: F401
 from .subscription import SubscriptionResource  # noqa: F401
 from .user import UserResource  # noqa: F401
