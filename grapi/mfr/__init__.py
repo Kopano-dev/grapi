@@ -338,7 +338,7 @@ class Server:
             try:
                 msgfmt = Msgfmt(open(pofile, 'rb'))
             except IOError:
-                logging.warn("error when opening po file '%s'", pofile)
+                logging.warning("error when opening po file '%s'", pofile)
 
             try:
                 gnutranslation = gettext.GNUTranslations(io.BytesIO(msgfmt.get()))
@@ -366,7 +366,7 @@ class Server:
         self.translations = self.get_translations(args.translations_path)
 
         if not self.translations:
-            logging.warn('no po files found, no translations will be available')
+            logging.warning('no po files found, no translations will be available')
         else:
             # TODO: lazy-logging, info message?
             logging.debug("translations available for: '%s'", ', '.join(self.translations.keys()))
@@ -459,7 +459,7 @@ class Server:
                     logging.critical('killing worker: %d', worker.pid)
                     os.kill(worker.pid, signal.SIGKILL)
                 else:
-                    logging.warn('terminating worker: %d', worker.pid)
+                    logging.warning('terminating worker: %d', worker.pid)
                     worker.terminate()
             if args.with_metrics and PROMETHEUS:
                 prometheus_multiprocess.mark_process_dead(worker.pid)
@@ -477,7 +477,7 @@ class Server:
                 os.unlink(unix_socket)
             except OSError as err:
                 if err.errno != errno.ENOENT:
-                    logging.warn('failed to remove socket %s on shutdown, error: %s', unix_socket, err)
+                    logging.warning('failed to remove socket %s on shutdown, error: %s', unix_socket, err)
 
         logging.info('shutdown complete')
 
