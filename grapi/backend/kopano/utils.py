@@ -132,7 +132,7 @@ def _server(req, options, forceReconnect=False):
 
     auth = _auth(req, options)
     if not auth:
-        raise falcon.HTTPForbidden('Unauthorized', None)
+        raise falcon.HTTPForbidden(title='Unauthorized', description=None)
 
     now = time.monotonic()
 
@@ -276,7 +276,7 @@ def _server_store(req, userid, options, forceReconnect=False):
             record = _server(req, options, forceReconnect=forceReconnect)
         except MAPIErrorNotFound:  # no store
             logging.info('no store for user %s for request %s', req.context.userid, req.path)
-            raise falcon.HTTPForbidden('Unauthorized', None)
+            raise falcon.HTTPForbidden(title='Unauthorized', description=None)
 
         server = record.server
         store = record.store
@@ -315,10 +315,11 @@ def _server_store(req, userid, options, forceReconnect=False):
 
     except (kopano.LogonError, kopano.NotFoundError, MAPIErrorNoAccess, MAPIErrorUnconfigured):
         logging.info('logon failed for user %s for request %s', req.context.userid, req.path, exc_info=True)
-        raise falcon.HTTPForbidden('Unauthorized', None)
+        raise falcon.HTTPForbidden(title='Unauthorized', description=None)
 
 
 def _folder(store, folderid):
+    """Return a store object related to the folder."""
     if store is None:
         raise falcon.HTTPNotFound(description='No store')
 
@@ -373,7 +374,7 @@ def _handle_exception(ex, req):
         raise ex
     except MAPIErrorNoAccess:
         logging.debug('access forbidden for user %s for request %s', req.context.userid, req.path, exc_info=True)
-        raise falcon.HTTPForbidden('No access', None)
+        raise falcon.HTTPForbidden(title='No access', description=None)
 
 
 def _set_value_by_tag(item, arg, tag: str) -> None:

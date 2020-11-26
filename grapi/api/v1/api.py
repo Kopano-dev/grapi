@@ -1,12 +1,16 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 import importlib
 
-import falcon
-
 from .decorators import requireResourceHandler, resourceException
 
+try:  # falcon 2.0+
+    from falcon import APP as FalconAPI
+except ImportError:  # falcon 1.0
+    from falcon import API as FalconAPI
 
-class API(falcon.API):
+
+
+class API(FalconAPI):
     def import_backend(self, name, options):
         backend = importlib.import_module('grapi.backend.%s' % name)
         if hasattr(backend, 'initialize'):

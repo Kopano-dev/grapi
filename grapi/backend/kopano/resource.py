@@ -211,7 +211,6 @@ class Resource(BaseResource):
                         obj2, resource = self.expansions[field](obj)
                         # TODO item@odata.context, @odata.type..
                         expand[field.split('/')[1]] = self.get_fields(req, obj2, resource.fields, resource.fields)
-
             resp.body = self.json(req, obj, fields, all_fields or self.fields, expand=expand)
 
     def generator(self, req, generator, count=0, container_class: str = None):

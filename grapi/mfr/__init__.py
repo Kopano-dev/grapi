@@ -29,8 +29,9 @@ except ImportError:
     UJSON = False
 
 try:
+    from prometheus_client import (CONTENT_TYPE_LATEST, CollectorRegistry,
+                                   Counter, Gauge, Summary, generate_latest)
     from prometheus_client import multiprocess as prometheus_multiprocess
-    from prometheus_client import generate_latest, CollectorRegistry, CONTENT_TYPE_LATEST, Summary, Counter, Gauge
     PROMETHEUS = True
 except ImportError:
     PROMETHEUS = False
@@ -88,7 +89,7 @@ def error_handler(ex, req, resp, params, with_metrics):
             if PROMETHEUS:
                 EXCEPTION_COUNT.inc()
         logging.exception('unhandled exception while processing request', exc_info=ex)
-        raise falcon.HTTPError(falcon.HTTP_500)
+        raise falcon.HTTPError(status=falcon.HTTP_500)
     raise ex
 
 
@@ -139,9 +140,9 @@ class FalconMetrics:
         req.context.start_time = time.time()
 
     def process_response(self, req, resp, resource, req_succeeded=True):
-        t = time.time() - req.context.start_time
-        label = req.context.label
+        label = req.context.get("label")
         if label:
+            t = time.time() - req.context.start_time
             deltaid = req.context.get('deltaid')
             if deltaid:
                 label = label.replace(deltaid, 'delta')
@@ -372,7 +373,7 @@ class Server:
             logging.debug("translations available for: '%s'", ', '.join(self.translations.keys()))
 
         if not UJSON:
-            warnings.warn('ujson module is not available, falling back to slower stdlib json implementation')
+            warnings.warning('ujson module is not available, falling back to slower stdlib json implementation')
 
         logging.info('starting kopano-mfr')
 
@@ -401,22 +402,22 @@ class Server:
 
         if args.with_metrics:
             if PROMETHEUS:
-                if not os.environ.get('prometheus_multiproc_dir'):
+                if os.environ.get('prometheus_multiproc_dir'):
+                    # Spawn the metrics process later, so we can pass along worker name and pids.
+                    monitor_workers = [(worker.name, worker.pid) for worker in workers]
+                    # Include master process.
+                    monitor_workers.append(('master', os.getpid()))
+                    metrics_runner = Runner(queue, self.run_metrics, 'metrics', args.process_name, 0)
+                    metrics_process = multiprocessing.Process(target=metrics_runner.run, args=(args.socket_path, args, monitor_workers))
+                    metrics_process.daemon = True
+                    metrics_process.start()
+                    workers.append(metrics_process)
+                else:
                     logging.error('please export "prometheus_multiproc_dir"')
-                    sys.exit(-1)
-
-                # Spawn the metrics process later, so we can pass along worker name and pids.
-                monitor_workers = [(worker.name, worker.pid) for worker in workers]
-                # Include master process.
-                monitor_workers.append(('master', os.getpid()))
-                metrics_runner = Runner(queue, self.run_metrics, 'metrics', args.process_name, 0)
-                metrics_process = multiprocessing.Process(target=metrics_runner.run, args=(args.socket_path, args, monitor_workers))
-                metrics_process.daemon = True
-                metrics_process.start()
-                workers.append(metrics_process)
+                    self.running = False
             else:
                 logging.error('please install prometheus client python bindings')
-                sys.exit(-1)
+                self.running = False
 
         signal.signal(signal.SIGCHLD, self.sigchld)
         signal.signal(signal.SIGTERM, self.sigterm)
@@ -461,7 +462,7 @@ class Server:
                 else:
                     logging.warning('terminating worker: %d', worker.pid)
                     worker.terminate()
-            if args.with_metrics and PROMETHEUS:
+            if os.environ.get('prometheus_multiproc_dir') and args.with_metrics and PROMETHEUS:
                 prometheus_multiprocess.mark_process_dead(worker.pid)
             worker.join()
 
