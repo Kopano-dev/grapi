@@ -6,13 +6,12 @@ import falcon
 import kopano
 from MAPI.Struct import MAPIErrorInvalidEntryid
 
-from grapi.api.v1.resource import HTTPConflict
-
 from . import group  # import as module since this is a circular import
 from .calendar import CalendarResource
 from .contact import ContactResource
 from .contactfolder import ContactFolderResource
 from .event import EventResource
+from .folder import FolderResource
 from .mailfolder import MailFolderResource
 from .message import MessageResource
 from .note import NoteResource
@@ -59,6 +58,56 @@ class UserResource(Resource):
         'userPrincipalName': lambda user: user.name,
 
         'companyName': lambda user: user.company,
+
+        # 'accountEnabled': lambda user: user,
+        # 'ageGroup': lambda user: user,
+        # 'businessPhones': lambda user: user,
+        # 'city': lambda user: user,
+        # 'consentProvidedForMinor': lambda user: user,
+        # 'country': lambda user: user,
+        # 'creationType': lambda user: user,
+        # 'createdDateTime': lambda user: user,
+        # 'deletedDateTime': lambda user: user,
+        # 'department': lambda user: user,
+        # 'employeeId': lambda user: user,
+        # 'externalUserState': lambda user: user,
+        # 'externalUserStateChangeDateTime': lambda user: user,
+        # 'faxNumber': lambda user: user,
+        # 'imAddresses': lambda user: user,
+        # 'isResourceAccount': lambda user: user,
+        # 'lastPasswordChangeDateTime': lambda user: user,
+        # 'legalAgeGroupClassification': lambda user: user,
+        # 'mailNickname': lambda user: user,
+        # 'onPremisesDistinguishedName': lambda user: user,
+        # 'onPremisesDomainName': lambda user: user,
+        # 'onPremisesImmutableId': lambda user: user,
+        # 'onPremisesSamAccountName': lambda user: user,
+        # 'onPremisesSecurityIdentifier': lambda user: user,
+        # 'onPremisesSyncEnabled': lambda user: user,
+        # 'onPremisesUserPrincipalName': lambda user: user,
+        # 'otherMails': lambda user: user,
+        # 'passwordPolicies': lambda user: user,
+        # 'postalCode': lambda user: user,
+        # 'preferredLanguage': lambda user: user,
+        # 'proxyAddresses': lambda user: user,
+        # 'showInAddressList': lambda user: user,
+        # 'signInSessionsValidFromDateTime': lambda user: user,
+        # 'state': lambda user: user,
+        # 'streetAddress': lambda user: user,
+        # 'usageLocation': lambda user: user,
+        # 'userType': lambda user: user,
+        # 'mailboxSettings': lambda user: user,
+        # 'deviceEnrollmentLimit': lambda user: user,
+        # 'aboutMe': lambda user: user,
+        # 'birthday': lambda user: user,
+        # 'hireDate': lambda user: user,
+        # 'interests': lambda user: user,
+        # 'mySite': lambda user: user,
+        # 'pastProjects': lambda user: user,
+        # 'preferredName': lambda user: user,
+        # 'responsibilities': lambda user: user,
+        # 'schools': lambda user: user,
+        # 'skills': lambda user: user,
     }
 
     def delta(self, req, resp, server):
@@ -107,56 +156,6 @@ class UserResource(Resource):
         data = self.generator(req, yielder)
         self.respond(req, resp, data)
 
-    @experimental
-    def handle_get_mailFolders(self, req, resp, store, server, userid):
-        data = self.generator(req, store.mail_folders, 0)
-        self.respond(req, resp, data, MailFolderResource.fields)
-
-    @experimental
-    def handle_get_notebooks(self, req, resp, store, server, userid):
-        data = self.generator(req, store.folders, 0, NotebookResource.container_class)
-        self.respond(req, resp, data, NotebookResource.fields)
-
-    @experimental
-    def handle_get_todo_lists(self, req, resp, store, server, userid):
-        data = self.generator(req, store.folders, 0, TodoListResource.container_class)
-        self.respond(req, resp, data, NotebookResource.fields)
-
-    @experimental
-    def handle_get_contactFolders(self, req, resp, store, server, userid):
-        data = self.generator(req, store.contact_folders, 0)
-        self.respond(req, resp, data, ContactFolderResource.fields)
-
-    @experimental
-    def handle_get_messages(self, req, resp, store, server, userid):
-        data = self.folder_gen(req, store.inbox)
-        self.respond(req, resp, data, MessageResource.fields)
-
-    @experimental
-    def handle_get_notes(self, req, resp, store, server, userid):
-        data = self.folder_gen(req, store.notes)
-        self.respond(req, resp, data, NoteResource.fields)
-
-    @experimental
-    def handle_get_tasks(self, req, resp, store, server, userid):
-        data = self.folder_gen(req, store.tasks)
-        self.respond(req, resp, data, TaskResource.fields)
-
-    @experimental
-    def handle_get_contacts(self, req, resp, store, server, userid):
-        data = self.folder_gen(req, store.contacts)
-        self.respond(req, resp, data, ContactResource.fields)
-
-    def handle_get_calendars(self, req, resp, store, server, userid):
-        data = self.generator(req, store.calendars, 0)
-        self.respond(req, resp, data, CalendarResource.fields)
-
-    @experimental
-    def handle_get_events(self, req, resp, store, server, userid):
-        calendar = store.calendar
-        data = self.generator(req, calendar.items, calendar.count)
-        self.respond(req, resp, data, EventResource.fields)
-
     def handle_get_calendarView(self, req, resp, store, server, userid):
         start, end = _start_end(req)
 
@@ -202,34 +201,34 @@ class UserResource(Resource):
             handler = self.handle_get
 
         elif method == 'mailFolders':
-            handler = self.handle_get_mailFolders
+            handler = MailFolderResource.get_all
 
         elif method == 'notebooks':
-            handler = self.handle_get_notebooks
+            handler = NotebookResource.get_all
 
         elif method == 'todolists':
-            handler = self.handle_get_todo_lists
+            handler = TodoListResource.get_all
 
         elif method == 'contactFolders':
-            handler = self.handle_get_contactFolders
-
-        elif method == 'messages':  # TODO store-wide?
-            handler = self.handle_get_messages
-
-        elif method == 'notes':  # TODO store-wide?
-            handler = self.handle_get_notes
-
-        elif method == 'tasks':  # TODO store-wide?
-            handler = self.handle_get_tasks
-
-        elif method == 'contacts':
-            handler = self.handle_get_contacts
+            handler = ContactFolderResource.get_all
 
         elif method == 'calendars':
-            handler = self.handle_get_calendars
+            handler = CalendarResource.get_all
+
+        elif method == 'messages':  # TODO store-wide?
+            handler = MessageResource.get_all
+
+        elif method == 'notes':  # TODO store-wide?
+            handler = NoteResource.get_all
+
+        elif method == 'tasks':  # TODO store-wide?
+            handler = TaskResource.get_all
+
+        elif method == 'contacts':
+            handler = ContactResource.get_all
 
         elif method == 'events':  # TODO multiple calendars?
-            handler = self.handle_get_events
+            handler = EventResource.get_all
 
         elif method == 'calendarView':  # TODO multiple calendars? merge code with calendar.py
             handler = self.handle_get_calendarView
@@ -259,80 +258,11 @@ class UserResource(Resource):
         handler(req, resp, store=store, server=server, userid=userid)
 
     @experimental
-    def handle_post_sendMail(self, req, resp, fields, store):
-        message = self.create_message(store.outbox, fields['message'], MessageResource.set_fields)
+    def handle_post_sendMail(self, req, resp, fields, parent):
+        message = self.create_item(parent.outbox, fields['message'], MessageResource.set_fields)
         copy_to_sentmail = fields.get('SaveToSentItems', 'true') == 'true'
         message.send(copy_to_sentmail=copy_to_sentmail)
         resp.status = falcon.HTTP_202
-
-    @experimental
-    def handle_post_contacts(self, req, resp, fields, store):
-        item = self.create_message(store.contacts, fields, ContactResource.set_fields)
-        self.respond(req, resp, item, ContactResource.fields)
-
-    @experimental
-    def handle_post_messages(self, req, resp, fields, store):
-        item = self.create_message(store.drafts, fields, MessageResource.set_fields)
-        item.message_class = MessageResource.message_class  # Set message class to fix broken message
-        self.respond(req, resp, item, MessageResource.fields)
-
-    @experimental
-    def handle_post_events(self, req, resp, fields, store):
-        self.validate_json(event_schema, fields)
-
-        try:
-            item = self.create_message(store.calendar, fields, EventResource.set_fields)
-        except kopano.errors.ArgumentError as e:
-            raise HTTPBadRequest("Invalid argument error '{}'".format(e))
-        if fields.get('attendees', None):
-            # NOTE(longsleep): Sending can fail with NO_ACCCESS if no permission to outbox.
-            item.send()
-        self.respond(req, resp, item, EventResource.fields)
-
-    @experimental
-    def handle_post_notes(self, req, resp, fields, store):
-        item = self.create_message(store.notes, fields, NoteResource.set_fields)
-        item.message_class = NoteResource.message_class
-        self.respond(req, resp, item, NoteResource.fields)
-
-    @experimental
-    def handle_post_tasks(self, req, resp, fields, store):
-        item = self.create_message(store.tasks, fields, TaskResource.set_fields)
-        item.message_class = TaskResource.message_class
-        self.respond(req, resp, item, TaskResource.fields)
-
-    @experimental
-    def handle_post_mailFolders(self, req, resp, fields, store):
-        try:
-            folder = store.create_folder(fields['displayName'])
-        except kopano.errors.DuplicateError:
-            raise HTTPConflict("'%s' folder already exists" % fields['displayName'])
-        resp.status = falcon.HTTP_201
-        self.respond(req, resp, folder, MailFolderResource.fields)
-
-    @experimental
-    def handle_post_contactFolders(self, req, resp, fields, store):
-        folder = store.create_folder(fields['displayName'])  # TODO exception on conflict
-        folder.container_class = ContactFolderResource.container_class
-        self.respond(req, resp, folder, ContactFolderResource.fields)
-
-    @experimental
-    def handle_post_calendars(self, req, resp, fields, store):
-        folder = store.create_folder(fields['name'])  # TODO exception on conflict
-        folder.container_class = CalendarResource.container_class
-        self.respond(req, resp, folder, CalendarResource.fields)
-
-    @experimental
-    def handle_post_notebooks(self, req, resp, fields, store):
-        folder = store.create_folder(fields['displayName'])  # TODO exception on conflict
-        folder.container_class = NotebookResource.container_class
-        self.respond(req, resp, folder, NotebookResource.fields)
-
-    @experimental
-    def handle_post_todo_lists(self, req, resp, fields, store):
-        folder = store.create_folder(fields['displayName'])  # TODO exception on conflict
-        folder.container_class = TodoListResource.container_class
-        self.respond(req, resp, folder, TodoListResource.fields)
 
     # TODO redirect to other resources?
     def on_post(self, req, resp, userid=None, method=None):
@@ -342,34 +272,34 @@ class UserResource(Resource):
             handler = self.handle_post_sendMail
 
         elif method == 'contacts':
-            handler = self.handle_post_contacts
+            handler = ContactResource.create
 
         elif method == 'messages':
-            handler = self.handle_post_messages
+            handler = MessageResource.create
 
         elif method == 'events':
-            handler = self.handle_post_events
+            handler = EventResource.create
 
         elif method == 'notes':
-            handler = self.handle_post_notes
+            handler = NoteResource.create
 
         elif method == 'tasks':
-            handler = self.handle_post_tasks
+            handler = TaskResource.create
 
         elif method == 'mailFolders':
-            handler = self.handle_post_mailFolders
+            handler = MailFolderResource.create
 
         elif method == 'contactFolders':
-            handler = self.handle_post_contactFolders
+            handler = ContactFolderResource.create
 
         elif method == 'calendars':
-            handler = self.handle_post_calendars
+            handler = CalendarResource.create
 
         elif method == 'notebooks':
-            handler = self.handle_post_notebooks
+            handler = NotebookResource.create
 
         elif method == 'todolists':
-            handler = self.handle_post_todo_lists
+            handler = TodoListResource.create
 
         elif method:
             raise HTTPBadRequest("Unsupported user segment '%s'" % method)
@@ -379,4 +309,4 @@ class UserResource(Resource):
 
         server, store, userid = _server_store(req, userid, self.options)
         fields = self.load_json(req)
-        handler(req, resp, fields=fields, store=store)
+        handler(req, resp, fields=fields, parent=store)

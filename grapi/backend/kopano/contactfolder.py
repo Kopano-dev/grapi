@@ -16,6 +16,10 @@ class DeletedContactFolderResource(FolderResource):
 
 @experimental
 class ContactFolderResource(FolderResource):
+    @classmethod
+    def default_folders_list(cls, store):
+        return store.contact_folders
+
     fields = FolderResource.fields.copy()
     fields.update({
         'displayName': lambda folder: folder.name,
@@ -73,7 +77,7 @@ class ContactFolderResource(FolderResource):
     def handle_post_contacts(self, req, resp, store, folderid):
         folder = _folder(store, folderid)
         fields = self.load_json(req)
-        item = self.create_message(folder, fields, ContactResource.set_fields)
+        item = self.create_item(folder, fields, ContactResource.set_fields)
 
         self.respond(req, resp, item, ContactResource.fields)
         resp.status = falcon.HTTP_201
@@ -81,9 +85,7 @@ class ContactFolderResource(FolderResource):
     def handle_post_childFolders(self, req, resp, store, folderid):
         folder = _folder(store, folderid)
         fields = self.load_json(req)
-        child = folder.create_folder(fields['displayName'])  # TODO exception on conflict
-        child.container_class = ContactFolderResource.container_class
-        self.respond(req, resp, child, ContactFolderResource.fields)
+        self.create(req, resp, fields, folder)
 
     def on_post(self, req, resp, userid=None, folderid=None, method=None):
         handler = None
@@ -93,6 +95,12 @@ class ContactFolderResource(FolderResource):
 
         elif method == 'childFolders':
             handler = self.handle_post_childFolders
+
+        elif method == 'copy':
+            handler = self.copy
+
+        elif method == 'move':
+            handler = self.move
 
         elif method:
             raise HTTPBadRequest("Unsupported contactfolder segment '%s'" % method)

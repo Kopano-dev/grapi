@@ -2,9 +2,19 @@
 import codecs
 
 import falcon
+import kopano
+
+from grapi.api.v1.resource import HTTPConflict
+from MAPI.Struct import MAPIErrorCollision
 
 from .resource import DEFAULT_TOP, Resource
 from .utils import _folder, _server_store, db_get, db_put, experimental
+from .schema import folder_schema, destination_id_schema
+
+from kopano import Restriction
+from MAPI import RELOP_EQ
+from MAPI.Struct import (SPropertyRestriction, MAPIErrorInvalidEntryid, SPropValue)
+from MAPI.Tags import PR_CONTAINER_CLASS_W
 
 
 class DeletedFolder(object):
@@ -32,10 +42,94 @@ class FolderResource(Resource):
         'id': lambda folder: folder.entryid,
     }
 
+    def __init__(self, options):
+        super().__init__(options)
+
+    container_class = None
+
     @experimental
     def handle_delete(self, req, resp, store, folder):
         store.delete(folder)
         self.respond_204(resp)
+
+    # Some folder do not have any method to get them. In that case it is possible
+    # to get that folders by enabling restrictions. This will collect all folders
+    # with the container_class of this resource
+    needs_restriction = False
+
+    @classmethod
+    def default_folders_list(cls, store):
+        return store.folders
+
+    @classmethod
+    def get_all(cls, req, resp, store, server, userid):
+        restriction = None
+        if cls.needs_restriction:
+            restriction = Restriction(SPropertyRestriction(
+                RELOP_EQ, PR_CONTAINER_CLASS_W,
+                SPropValue(PR_CONTAINER_CLASS_W, cls.container_class)
+            ))
+
+        data = cls.generator(req, cls.default_folders_list(store), 0, restriction)
+        cls.respond(req, resp, data, cls.fields)
+
+    @classmethod
+    def create_child(cls, req, resp, store, folder_id):
+        folder = _folder(store, folder_id)
+        fields = cls.load_json(req)
+        cls.create(req, resp, fields, folder)
+
+    @classmethod
+    def name_field(cls, fields: dict):
+        return fields['displayName']
+
+    validation_schema = folder_schema
+
+    @classmethod
+    def create(cls, req, resp, fields: dict, parent):
+        cls.validate_json(cls.validation_schema, fields)
+        try:
+            folder = parent.create_folder(cls.name_field(fields))
+            folder.container_class = cls.container_class
+        except kopano.errors.DuplicateError:
+            raise HTTPConflict("'%s' folder already exists" % fields['displayName'])
+        resp.status = falcon.HTTP_201
+        cls.respond(req, resp, folder, cls.fields)
+
+    @classmethod
+    def copy(cls, req, resp, store, folderid):
+        cls._copy_or_move(req, resp, store=store, folderid=folderid, move=False)
+
+    @classmethod
+    def move(cls, req, resp, store, folderid):
+        cls._copy_or_move(req, resp, store=store, folderid=folderid, move=True)
+
+    @classmethod
+    def _copy_or_move(cls, req, resp, store, folderid, move=False):
+        """Handle POST request for Copy or Move actions."""
+        fields = cls.load_json(req)
+        cls.validate_json(destination_id_schema, fields)
+        folder = _folder(store, folderid)
+        if not folder:
+            raise falcon.HTTPNotFound(description="source folder not found")
+
+        to_folder = store.folder(entryid=fields['destinationId'].encode('ascii'))  # TODO ascii?
+        if not to_folder:
+            raise falcon.HTTPNotFound(description="destination folder not found")
+
+        if move:
+            try:
+                folder.parent.move(folder, to_folder)
+            except MAPIErrorCollision:
+                raise HTTPConflict("move has failed because some items already exists")
+        else:
+            try:
+                folder.parent.copy(folder, to_folder)
+            except MAPIErrorCollision:
+                raise HTTPConflict("copy has failed because some items already exists")
+
+        new_folder = to_folder.folder(folder.name)
+        cls.respond(req, resp, new_folder, cls.fields)
 
     def on_delete(self, req, resp, userid=None, folderid=None):
         server, store, userid = _server_store(req, userid, self.options)
@@ -53,7 +147,7 @@ class FolderResource(Resource):
         importer = FolderImporter()
         newstate = store.subtree.sync_hierarchy(importer, token)
         changes = [(o, self) for o in importer.updates] + \
-            [(o, self.deleted_resource) for o in importer.deletes]
+                  [(o, self.deleted_resource) for o in importer.deletes]
         changes = [c for c in changes if c[0].container_class in self.container_classes]  # TODO restriction?
         data = (changes, DEFAULT_TOP, 0, len(changes))
         deltalink = b"%s?$deltatoken=%s" % (req.path.encode('utf-8'), codecs.encode(newstate, 'ascii'))

@@ -152,6 +152,12 @@ class DeletedMessageResource(ItemResource):
 
 @experimental
 class MessageResource(ItemResource):
+    @classmethod
+    def default_folder_create(cls, store):
+        return store.drafts
+
+    default_folder = 'inbox'
+
     fields = ItemResource.fields.copy()
     fields.update({
         # TODO pyko shortcut for event messages
@@ -201,34 +207,12 @@ class MessageResource(ItemResource):
         'attachments': lambda message: (message.attachments, attachment.FileAttachmentResource),  # TODO embedded
     }
 
-    def handle_get(self, req, resp, store, folder, itemid):
-        if itemid == 'delta':  # TODO move to MailFolder resource somehow?
-            self._handle_get_delta(req, resp, store=store, folder=folder)
-        else:
-            self._handle_get_with_itemid(req, resp, store=store, folder=folder, itemid=itemid)
-
-    def _handle_get_delta(self, req, resp, store, folder):
-        req.context.deltaid = '{itemid}'
-        self.delta(req, resp, folder=folder)
-
-    def _handle_get_with_itemid(self, req, resp, store, folder, itemid):
-        item = _item(folder, itemid)
-        self.respond(req, resp, item)
-
-    def handle_get_attachments(self, req, resp, store, folder, itemid):
-        item = _item(folder, itemid)
-        attachments = list(attachment.get_attachments(item))
-        data = (attachments, DEFAULT_TOP, 0, len(attachments))
-        self.respond(req, resp, data)
-
     def on_get(self, req, resp, userid=None, folderid=None, itemid=None, method=None):
-        handler = None
-
         if not method:
-            handler = self.handle_get
+            handler = self.get
 
         elif method == 'attachments':
-            handler = self.handle_get_attachments
+            handler = self.get_attachments
 
         elif method:
             raise HTTPBadRequest("Unsupported message segment '%s'" % method)
@@ -237,62 +221,37 @@ class MessageResource(ItemResource):
             raise HTTPBadRequest("Unsupported in message")
 
         server, store, userid = _server_store(req, userid, self.options)
-        folder = _folder(store, folderid or 'inbox')  # TODO all folders?
+        folder = _folder(store, folderid or self.default_folder)  # TODO all folders?
         handler(req, resp, store=store, folder=folder, itemid=itemid)
 
-    def handle_post_createReply(self, req, resp, store, folder, item):
-        self._handle_post_createRaplyOrCreateReplyAll(req, resp, store, folder, item, False)
+    def handle_post_createReply(self, req, resp, store, folder, itemid):
+        self._handle_post_createRaplyOrCreateReplyAll(req, resp, store, folder, itemid, False)
 
-    def handle_post_createReplyAll(self, req, resp, store, folder, item):
-        self._handle_post_createRaplyOrCreateReplyAll(req, resp, store, folder, item, True)
+    def handle_post_createReplyAll(self, req, resp, store, folder, itemid):
+        self._handle_post_createRaplyOrCreateReplyAll(req, resp, store, folder, itemid, True)
 
-    def _handle_post_createRaplyOrCreateReplyAll(self, req, resp, store, folder, item, replyAll: bool):
+    def _handle_post_createRaplyOrCreateReplyAll(self, req, resp, store, folder, itemid, replyAll: bool):
+        item = self.get_item_by_id(folder, itemid)
         fields = self.load_json(req)
         if 'message' in fields:
             fields = fields['message']
         else:
             fields = {}
-        logging.info(fields)
+
         new_item = item.reply(all=replyAll)
         for field in self.set_fields:
             if field in fields:
                 self.set_fields[field](new_item, fields[field])
 
-        logging.info(new_item.body)
         self.respond(req, resp, new_item, MessageResource.fields)
         resp.status = falcon.HTTP_201
 
-    def handle_post_attachments(self, req, resp, store, folder, item):
-        fields = self.load_json(req)
-        odataType = fields.get('@odata.type', None)
-        if odataType == '#microsoft.graph.fileAttachment':  # TODO other types
-            att = item.create_attachment(fields['name'], base64.urlsafe_b64decode(fields['contentBytes']))
-            self.respond(req, resp, att, attachment.AttachmentResource.fields)
-            resp.status = falcon.HTTP_201
-        else:
-            raise HTTPBadRequest("Unsupported attachment @odata.type: '%s'" % odataType)
-
-    def handle_post_copy(self, req, resp, store, folder, item):
-        self._handle_post_copyOrMove(req, resp, store=store, item=item)
-
-    def handle_post_move(self, req, resp, store, folder, item):
-        self._handle_post_copyOrMove(req, resp, store=store, item=item, move=True)
-
-    def _handle_post_copyOrMove(self, req, resp, store, item, move=False):
-        fields = self.load_json(req)
-        to_folder = store.folder(entryid=fields['destinationId'].encode('ascii'))  # TODO ascii?
-        if not move:
-            item = item.copy(to_folder)
-        else:
-            item = item.move(to_folder)
-
-    def handle_post_send(self, req, resp, store, folder, item):
+    def handle_post_send(self, req, resp, store, folder, itemid):
+        item = self.get_item_by_id(folder, itemid)
         item.send()
         resp.status = falcon.HTTP_202
 
     def on_post(self, req, resp, userid=None, folderid=None, itemid=None, method=None):
-        handler = None
-
         if method == 'createReply' or method == 'microsoft.graph.createReply':
             handler = self.handle_post_createReply
 
@@ -300,16 +259,20 @@ class MessageResource(ItemResource):
             handler = self.handle_post_createReplyAll
 
         elif method == 'attachments':
-            handler = self.handle_post_attachments
+            handler = self.add_attachments
 
         elif method == 'copy' or method == 'microsoft.graph.copy':
-            handler = self.handle_post_copy
+            handler = self.copy
 
         elif method == 'move' or method == 'microsoft.graph.move':
-            handler = self.handle_post_move
+            handler = self.move
 
         elif method == 'send' or method == 'microsoft.graph.send':
             handler = self.handle_post_send
+
+        # TODO add forward messge
+        # elif method == 'send' or method == 'microsoft.graph.forward':
+        #     handler = self.handle_post_forward
 
         elif method:
             raise HTTPBadRequest("Unsupported message segment '%s'" % method)
@@ -318,25 +281,12 @@ class MessageResource(ItemResource):
             raise HTTPBadRequest("Unsupported in message")
 
         server, store, userid = _server_store(req, userid, self.options)
-        folder = _folder(store, folderid or 'inbox')  # TODO all folders?
-        item = _item(folder, itemid)
-        handler(req, resp, store=store, folder=folder, item=item)
-
-    def handle_patch(self, req, resp, store, folder, itemid):
-        item = _item(folder, itemid)
-        fields = self.load_json(req)
-
-        for field, value in fields.items():
-            if field in self.set_fields:
-                self.set_fields[field](item, value)
-
-        self.respond(req, resp, item, MessageResource.fields)
+        folder = _folder(store, folderid or self.default_folder)  # TODO all folders?
+        handler(req, resp, store=store, folder=folder, itemid=itemid)
 
     def on_patch(self, req, resp, userid=None, folderid=None, itemid=None, method=None):
-        handler = None
-
         if not method:
-            handler = self.handle_patch
+            handler = self.patch
 
         else:
             raise HTTPBadRequest("Unsupported message segment '%s'" % method)
@@ -345,24 +295,19 @@ class MessageResource(ItemResource):
         folder = _folder(store, folderid or 'inbox')  # TODO all folders?
         handler(req, resp, store=store, folder=folder, itemid=itemid)
 
-    def handle_delete(self, req, resp, store, itemid):
-        item = _item(store, itemid)
-
-        store.delete(item)
-
-        self.respond_204(resp)
-
     def on_delete(self, req, resp, userid=None, folderid=None, itemid=None, method=None):
-        handler = None
-
         if not method:
-            handler = self.handle_delete
+            handler = self.delete
 
         else:
             raise HTTPBadRequest("Unsupported message segment '%s'" % method)
 
         server, store, userid = _server_store(req, userid, self.options)
-        handler(req, resp, store=store, itemid=itemid)
+        if folderid:
+            folder = _folder(store, folderid)
+        else:
+            folder = store
+        handler(req, resp, store=folder, itemid=itemid)
 
 
 class EmbeddedMessageResource(MessageResource):

@@ -15,6 +15,8 @@ class DeletedNotebookResource(FolderResource):
 
 @experimental
 class NotebookResource(FolderResource):
+    needs_restriction = True
+
     fields = FolderResource.fields.copy()
     fields.update({
         'parentFolderId': lambda folder: folder.parent.entryid,
@@ -76,32 +78,8 @@ class NotebookResource(FolderResource):
     def handle_post_notes(self, req, resp, store, folderid):
         folder = _folder(store, folderid)
         fields = self.load_json(req)
-        item = self.create_message(folder, fields, NoteResource.set_fields)
+        item = self.create_item(folder, fields, NoteResource.set_fields)
         self.respond(req, resp, item, NoteResource.fields)
-
-    def handle_post_childFolders(self, req, resp, store, folderid):
-        folder = _folder(store, folderid)
-        fields = self.load_json(req)
-        child = folder.create_folder(fields['displayName'])  # TODO exception on conflict
-        self.respond(req, resp, child, NotebookResource.fields)
-
-    def handle_post_copy(self, req, resp, store, folderid):
-        self._handle_post_copyOrMove(req, resp, store=store, folderid=folderid, move=False)
-
-    def handle_post_move(self, req, resp, store, folderid):
-        self._handle_post_copyOrMove(req, resp, store=store, folderid=folderid, move=True)
-
-    def _handle_post_copyOrMove(self, req, resp, store, folderid, move=False):
-        folder = _folder(store, folderid)
-        fields = self.load_json(req)
-        to_folder = store.folder(entryid=fields['destinationId'].encode('ascii'))  # TODO ascii?
-        if not move:
-            folder.parent.copy(folder, to_folder)
-        else:
-            folder.parent.move(folder, to_folder)
-
-        new_folder = to_folder.folder(folder.name)
-        self.respond(req, resp, new_folder, NotebookResource.fields)
 
     def on_post(self, req, resp, userid=None, folderid=None, method=None):
         handler = None
@@ -110,13 +88,13 @@ class NotebookResource(FolderResource):
             handler = self.handle_post_notes
 
         elif method == 'childFolders':
-            handler = self.handle_post_childFolders
+            handler = self.create_child
 
         elif method == 'copy':
-            handler = self.handle_post_copy
+            handler = self.copy
 
         elif method == 'move':
-            handler = self.handle_post_move
+            handler = self.move
 
         elif method:
             raise HTTPBadRequest("Unsupported notebook segment '%s'" % method)

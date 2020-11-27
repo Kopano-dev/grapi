@@ -1,14 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import falcon
-import kopano
 from MAPI.Struct import MAPIErrorCollision
 
 from grapi.api.v1.resource import HTTPBadRequest, HTTPConflict
-
 from .folder import FolderResource
 from .message import MessageResource
-from .schema import destination_id_schema, folder_schema, message_schema
+from .schema import destination_id_schema, message_schema
 from .utils import _folder, _server_store, experimental
 
 
@@ -22,6 +20,10 @@ class DeletedMailFolderResource(FolderResource):
 
 @experimental
 class MailFolderResource(FolderResource):
+    @classmethod
+    def default_folders_list(cls, store):
+        return store.mail_folders
+
     fields = FolderResource.fields.copy()
     fields.update({
         'parentFolderId': lambda folder: folder.parent.entryid,
@@ -83,51 +85,9 @@ class MailFolderResource(FolderResource):
         fields = self.load_json(req)
         self.validate_json(message_schema, fields)
         folder = _folder(store, folderid)
-        item = self.create_message(folder, fields, MessageResource.set_fields)
+        item = self.create_item(folder, fields, MessageResource.set_fields)
         resp.status = falcon.HTTP_201
         self.respond(req, resp, item, MessageResource.fields)
-
-    def handle_post_childFolders(self, req, resp, store, folderid):
-        fields = self.load_json(req)
-        self.validate_json(folder_schema, fields)
-        folder = _folder(store, folderid)
-        if folder.get_folder(fields['displayName']):
-            raise HTTPConflict("'%s' already exists" % fields['displayName'])
-        child = folder.create_folder(fields['displayName'])
-        resp.status = falcon.HTTP_201
-        self.respond(req, resp, child, MailFolderResource.fields)
-
-    def handle_post_copy(self, req, resp, store, folderid):
-        self._handle_post_copyOrMove(req, resp, store=store, folderid=folderid, move=False)
-
-    def handle_post_move(self, req, resp, store, folderid):
-        self._handle_post_copyOrMove(req, resp, store=store, folderid=folderid, move=True)
-
-    def _handle_post_copyOrMove(self, req, resp, store, folderid, move=False):
-        """Handle POST request for Copy or Move actions."""
-        fields = self.load_json(req)
-        self.validate_json(destination_id_schema, fields)
-        folder = _folder(store, folderid)
-        if not folder:
-            raise falcon.HTTPNotFound(description="source folder not found")
-
-        to_folder = store.folder(entryid=fields['destinationId'].encode('ascii'))  # TODO ascii?
-        if not to_folder:
-            raise falcon.HTTPNotFound(description="destination folder not found")
-
-        if not move:
-            try:
-                folder.parent.copy(folder, to_folder)
-            except MAPIErrorCollision:
-                raise HTTPConflict("copy has failed because some items already exists")
-        else:
-            try:
-                folder.parent.move(folder, to_folder)
-            except MAPIErrorCollision:
-                raise HTTPConflict("move has failed because some items already exists")
-
-        new_folder = to_folder.folder(folder.name)
-        self.respond(req, resp, new_folder, MailFolderResource.fields)
 
     def on_post(self, req, resp, userid=None, folderid=None, method=None):
         handler = None
@@ -136,13 +96,13 @@ class MailFolderResource(FolderResource):
             handler = self.handle_post_messages
 
         elif method == 'childFolders':
-            handler = self.handle_post_childFolders
+            handler = self.create_child
 
         elif method == 'copy':
-            handler = self.handle_post_copy
+            handler = self.copy
 
         elif method == 'move':
-            handler = self.handle_post_move
+            handler = self.move
 
         elif method:
             raise HTTPBadRequest("Unsupported mailFolder segment '%s'" % method)

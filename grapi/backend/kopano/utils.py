@@ -340,7 +340,7 @@ def _folder(store, folderid):
         return store.sentmail
     elif name == 'notes':
         return store.notes
-    elif name == 'notes':
+    elif name == 'tasks':
         return store.tasks
     else:
         try:

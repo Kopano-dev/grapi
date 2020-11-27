@@ -432,6 +432,18 @@ _message_schema = {
     "additionalProperties": False
 }
 
+_calendar_schema = {
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string",
+            "minLength": 1
+        },
+    },
+    "required": ["name"]
+}
+
 _folder_schema = {
     "$schema": "http://json-schema.org/draft-04/schema#",
     "type": "object",
@@ -462,5 +474,6 @@ update_subscription_schema = jsonschema.Draft4Validator(_update_subscription_sch
 mr_schema = jsonschema.Draft4Validator(_mr_schema)
 get_schedule_schema = jsonschema.Draft4Validator(_getschedule_schema)
 message_schema = jsonschema.Draft4Validator(_message_schema)
+calendar_schema = jsonschema.Draft4Validator(_calendar_schema)
 folder_schema = jsonschema.Draft4Validator(_folder_schema)
 destination_id_schema = jsonschema.Draft4Validator(_destination_id_schema)

@@ -20,6 +20,16 @@ def get_fbinfo(req, block):
 
 
 class CalendarResource(FolderResource):
+    @classmethod
+    def default_folders_list(cls, store):
+        return store.calendars
+
+    @classmethod
+    def name_field(cls, fields: dict):
+        return fields['name']
+
+    validation_schema = calendar_schema
+
     fields = FolderResource.fields.copy()
     fields.update({
         'name': lambda folder: folder.name,
@@ -72,7 +82,7 @@ class CalendarResource(FolderResource):
         fields = self.load_json(req)
         self.validate_json(event_schema, fields)
 
-        item = self.create_message(folder, fields, EventResource.set_fields)
+        item = self.create_item(folder, fields, EventResource.set_fields)
         if fields.get('attendees', None):
             # NOTE(longsleep): Sending can fail with NO_ACCCESS if no permission to outbox.
             item.send()
