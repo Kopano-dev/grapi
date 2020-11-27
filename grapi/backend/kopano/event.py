@@ -10,8 +10,7 @@ from .attachment import AttachmentResource
 from .item import ItemResource, get_body, get_email, set_body
 from .resource import DEFAULT_TOP, _date, _start_end, _tzdate, set_date
 from .schema import mr_schema
-from .utils import (HTTPBadRequest, HTTPNotFound, _folder, _server_store,
-                    experimental)
+from .utils import (HTTPBadRequest, _folder, _server_store, experimental)
 
 pattern_map = {
     'monthly': 'absoluteMonthly',
@@ -161,6 +160,30 @@ def event_type(item):
 
 
 class EventResource(ItemResource):
+    @classmethod
+    def do_custom(cls, item, fields):
+        if fields.get('attendees', None):
+            # NOTE(longsleep): Sending can fail with NO_ACCCESS if no permission to outbox.
+            item.send()
+
+    @classmethod
+    def do_custom_before_delete(cls, item):
+        # If meeting is organised, sent cancellation
+        if cls.fields['isOrganizer'](item):
+            item.cancel()
+            item.send()
+
+    @classmethod
+    def get_item_by_id(cls, folder, itemid):
+        try:
+            return folder.event(itemid)
+        except binascii.Error:
+            raise HTTPBadRequest('Event id is malformed')
+        except kopano.errors.NotFoundError:
+            raise falcon.HTTPNotFound(description='Item not found')
+
+    default_folder = 'calendar'
+
     fields = ItemResource.fields.copy()
     fields.update({
         'id': lambda item: item.eventid,
@@ -205,24 +228,19 @@ class EventResource(ItemResource):
         # 8.7.x does not have onlinemeetingurl attribute, so we must check if its there for compatibility
         'onlineMeetingUrl': lambda item, arg: setattr(item, 'onlinemeetingurl', arg) if hasattr(item, 'onlinemeetingurl') else None,
     }
+    message_class = 'IPM.Appointment'
 
     # TODO delta functionality seems to include expanding recurrences!? check with MSGE
 
-    def get_event(self, folder, eventid):
-        try:
-            return folder.event(eventid)
-        except binascii.Error:
-            raise HTTPBadRequest('Event id is malformed')
-        except kopano.errors.NotFoundError:
-            raise HTTPNotFound(description='Item not found')
-
     @experimental
-    def handle_get_attachments(self, req, resp, event):
+    def handle_get_attachments(self, req, resp, folder, itemid):
+        event = self.get_item_by_id(folder, itemid)
         attachments = list(event.attachments(embedded=True))
         data = (attachments, DEFAULT_TOP, 0, len(attachments))
         self.respond(req, resp, data, AttachmentResource.fields)
 
-    def handle_get_instances(self, req, resp, event):
+    def handle_get_instances(self, req, resp, folder, itemid):
+        event = self.get_item_by_id(folder, itemid)
         start, end = _start_end(req)
 
         def yielder(**kwargs):
@@ -231,14 +249,11 @@ class EventResource(ItemResource):
         data = self.generator(req, yielder)
         self.respond(req, resp, data)
 
-    def handle_get(self, req, resp, event):
-        self.respond(req, resp, event)
-
     def on_get(self, req, resp, userid=None, folderid=None, eventid=None, method=None):
         handler = None
 
         if method == 'attachments':
-            handler = self.handle_get_attachments
+            handler = self.get_attachments
 
         elif method == 'instances':
             handler = self.handle_get_instances
@@ -247,40 +262,35 @@ class EventResource(ItemResource):
             raise HTTPBadRequest("Unsupported event segment '%s'" % method)
 
         else:
-            handler = self.handle_get
+            handler = self.get
 
         server, store, userid = _server_store(req, userid, self.options)
-        folder = _folder(store, folderid or 'calendar')
-        event = self.get_event(folder, eventid)
-        handler(req, resp, event=event)
+        folder = _folder(store, folderid or self.default_folder)
+        handler(req, resp, store=store, folder=folder, itemid=eventid)
 
-    def handle_post_accept(self, req, resp, fields, item):
+    def handle_post_accept(self, req, resp, store, folder, itemid):
+        item = self.get_item_by_id(folder, itemid)
+        fields = self.load_json(req)
         _ = req.context.i18n.gettext
         self.validate_json(mr_schema, fields)
         item.accept(comment=fields.get('comment'), respond=(fields.get('sendResponse', True)), subject_prefix=_("Accepted"))
         resp.status = falcon.HTTP_202
 
-    def handle_post_tentativelyAccept(self, req, resp, fields, item):
+    def handle_post_tentativelyAccept(self, req, resp, store, folder, itemid):
+        item = self.get_item_by_id(folder, itemid)
+        fields = self.load_json(req)
         _ = req.context.i18n.gettext
         self.validate_json(mr_schema, fields)
         item.accept(comment=fields.get('comment'), tentative=True, respond=(fields.get('sendResponse', True)), subject_prefix=_("Tentatively accepted"))
         resp.status = falcon.HTTP_202
 
-    def handle_post_decline(self, req, resp, fields, item):
+    def handle_post_decline(self, req, resp, store, folder, itemid):
+        item = self.get_item_by_id(folder, itemid)
+        fields = self.load_json(req)
         _ = req.context.i18n.gettext
         self.validate_json(mr_schema, fields)
         item.decline(comment=fields.get('comment'), respond=(fields.get('sendResponse', True)), subject_prefix=_("Declined"))
         resp.status = falcon.HTTP_202
-
-    @experimental
-    def handle_post_attachments(self, req, resp, fields, item):
-        odataType = fields.get('@odata.type', None)
-        if odataType == '#microsoft.graph.fileAttachment':  # TODO other types
-            att = item.create_attachment(fields['name'], base64.urlsafe_b64decode(fields['contentBytes']))
-            self.respond(req, resp, att, AttachmentResource.fields)
-            resp.status = falcon.HTTP_201
-        else:
-            raise HTTPBadRequest("Unsupported attachment @odata.type: '%s'" % odataType)
 
     def on_post(self, req, resp, userid=None, folderid=None, eventid=None, method=None):
         handler = None
@@ -295,7 +305,7 @@ class EventResource(ItemResource):
             handler = self.handle_post_decline
 
         elif method == 'attachments':
-            handler = self.handle_post_attachments
+            handler = self.add_attachments
 
         elif method:
             raise HTTPBadRequest("Unsupported event segment '%s'" % method)
@@ -304,43 +314,17 @@ class EventResource(ItemResource):
             raise HTTPBadRequest("Unsupported in event")
 
         server, store, userid = _server_store(req, userid, self.options)
-        folder = _folder(store, folderid or 'calendar')
-        item = self.get_event(folder, eventid)
-        fields = self.load_json(req)
-        handler(req, resp, fields=fields, item=item)
-
-    def handle_patch(self, req, resp, fields, item):
-        for field, value in fields.items():
-            if field in self.set_fields:
-                self.set_fields[field](item, value)
-        if fields.get('attendees', None):
-            # NOTE(longsleep): Sending can fail with NO_ACCCESS if no permission to outbox.
-            item.send()
-
-        self.respond(req, resp, item, EventResource.fields)
+        folder = _folder(store, folderid or self.default_folder)
+        handler(req, resp, store=store, folder=folder, itemid=eventid)
 
     def on_patch(self, req, resp, userid=None, folderid=None, eventid=None, method=None):
         server, store, userid = _server_store(req, userid, self.options)
-        folder = _folder(store, folderid or 'calendar')
-        item = self.get_event(folder, eventid)
-
-        fields = self.load_json(req)
-        self.handle_patch(req, resp, fields=fields, item=item)
-
-    def handle_delete(self, req, resp, folder, item):
-        # If meeting is organised, sent cancellation
-        if self.fields['isOrganizer'](item):
-            item.cancel()
-            item.send()
-
-        folder.delete(item)
-        self.respond_204(resp)
+        folder = _folder(store, folderid or self.default_folder)
+        self.patch(req, resp, store=store, folder=folder, itemid=eventid)
 
     def on_delete(self, req, resp, userid=None, folderid=None, eventid=None):
-        handler = self.handle_delete
+        handler = self.delete
 
         server, store, userid = _server_store(req, userid, self.options)
-        folder = _folder(store, folderid or 'calendar')
-        item = self.get_event(folder, eventid)
-
-        handler(req, resp, folder=folder, item=item)
+        folder = _folder(store, folderid or self.default_folder)
+        handler(req, resp, store=folder, itemid=eventid)

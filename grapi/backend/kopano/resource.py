@@ -7,11 +7,6 @@ import dateutil.parser
 import pytz
 import tzlocal
 
-from kopano import Restriction
-from MAPI import RELOP_EQ
-from MAPI.Struct import ( SPropertyRestriction, MAPIErrorInvalidEntryid, SPropValue )
-from MAPI.Tags import PR_CONTAINER_CLASS_W
-
 from grapi.api.v1.resource import HTTPBadRequest
 from grapi.api.v1.resource import Resource as BaseResource
 from grapi.api.v1.resource import _dumpb_json, _encode_qs, _parse_qs
@@ -99,7 +94,8 @@ def _parse_date(args, key):
     try:
         value = args[key][0]
     except KeyError:
-        raise HTTPBadRequest('This request requires a time window specified by the query string parameters StartDateTime and EndDateTime.')
+        raise HTTPBadRequest(
+            'This request requires a time window specified by the query string parameters StartDateTime and EndDateTime.')
     try:
         return _naive_local(dateutil.parser.parse(value))
     except ValueError:
@@ -113,11 +109,18 @@ def _start_end(req):
 
 
 class Resource(BaseResource):
+    fields = None
+    set_fields = None
+
+    def __init__(self, options):
+        super().__init__(options)
+
     def exceptionHandler(self, ex, req, resp, **params):
         _handle_exception(ex, req)
 
-    def get_fields(self, req, obj, fields, all_fields):
-        fields = fields or all_fields or self.fields
+    @classmethod
+    def get_fields(cls, req, obj, fields, all_fields):
+        fields = fields or all_fields or cls.fields
         result = {}
         for f in fields:
             accessor = all_fields.get(f, None)
@@ -133,15 +136,17 @@ class Resource(BaseResource):
             del result['@odata.type']
         return result
 
-    def json(self, req, obj, fields, all_fields, multi=False, expand=None):
-        data = self.get_fields(req, obj, fields, all_fields)
+    @classmethod
+    def json(cls, req, obj, fields, all_fields, multi=False, expand=None):
+        data = cls.get_fields(req, obj, fields, all_fields)
         if not multi:
             data['@odata.context'] = req.path
         if expand:
             data.update(expand)
         return _dumpb_json(data)
 
-    def json_multi(self, req, obj, fields, all_fields, top, skip, count, deltalink, add_count=False):
+    @classmethod
+    def json_multi(cls, req, obj, fields, all_fields, top, skip, count, deltalink, add_count=False):
         header = b'{\n'
         header += b'  "@odata.context": "%s",\n' % req.path.encode('utf-8')
         if add_count:
@@ -151,12 +156,12 @@ class Resource(BaseResource):
         else:
             path = req.path
             if req.query_string:
-                args = self.parse_qs(req)
+                args = cls.parse_qs(req)
                 if '$skip' in args:
                     del args['$skip']
             else:
                 args = {}
-            args['$skip'] = skip+top
+            args['$skip'] = skip + top
             nextLink = path + '?' + _encode_qs(list(args.items()))
             header += b'  "@odata.nextLink": "%s",\n' % (_dumpb_json(nextLink)[1:-1])
         header += b'  "value": [\n'
@@ -170,15 +175,16 @@ class Resource(BaseResource):
                 if not first:
                     yield b',\n'
                 first = False
-                wa = self.json(req, o, fields, all_fields, multi=True)
-                yield b'\n'.join([b'    '+line for line in wa.splitlines()])
+                wa = cls.json(req, o, fields, all_fields, multi=True)
+                yield b'\n'.join([b'    ' + line for line in wa.splitlines()])
         except Exception:
             logging.exception("failed to marshal %s JSON response", req.path)
         yield b'\n  ]\n}'
 
-    def respond(self, req, resp, obj, all_fields=None, deltalink=None):
+    @classmethod
+    def respond(cls, req, resp, obj, all_fields=None, deltalink=None):
         # determine fields
-        args = self.parse_qs(req)
+        args = cls.parse_qs(req)
         if '$select' in args:
             fields = set(args['$select'][0].split(',') + ['@odata.type', '@odata.etag', 'id'])
         else:
@@ -194,7 +200,8 @@ class Resource(BaseResource):
             obj, top, skip, count = obj
             add_count = '$count' in args and args['$count'][0] == 'true'
 
-            resp.stream = self.json_multi(req, obj, fields, all_fields or self.fields, top, skip, count, deltalink, add_count)
+            resp.stream = cls.json_multi(req, obj, fields, all_fields or cls.fields, top, skip, count, deltalink,
+                                         add_count)
 
         # single object
         else:
@@ -203,44 +210,42 @@ class Resource(BaseResource):
             if '$expand' in args:
                 expand = {}
                 for field in args['$expand'][0].split(','):
-                    if hasattr(self, 'relations') and field in self.relations:
-                        objs, resource = self.relations[field](obj)
-                        expand[field] = [self.get_fields(req, obj2, resource.fields, resource.fields) for obj2 in objs()]
+                    if hasattr(cls, 'relations') and field in cls.relations:
+                        objs, resource = cls.relations[field](obj)
+                        expand[field] = [cls.get_fields(req, obj2, resource.fields, resource.fields) for obj2 in objs()]
 
-                    elif hasattr(self, 'expansions') and field in self.expansions:
-                        obj2, resource = self.expansions[field](obj)
+                    elif hasattr(cls, 'expansions') and field in cls.expansions:
+                        obj2, resource = cls.expansions[field](obj)
                         # TODO item@odata.context, @odata.type..
-                        expand[field.split('/')[1]] = self.get_fields(req, obj2, resource.fields, resource.fields)
-            resp.body = self.json(req, obj, fields, all_fields or self.fields, expand=expand)
+                        expand[field.split('/')[1]] = cls.get_fields(req, obj2, resource.fields, resource.fields)
+            resp.body = cls.json(req, obj, fields, all_fields or cls.fields, expand=expand)
 
-    def generator(self, req, generator, count=0, container_class: str = None):
+    @staticmethod
+    def generator(req, generator, count=0, restriction=None):
         # determine pagination and ordering
         args = _parse_qs(req)
         top = int(args['$top'][0]) if '$top' in args else DEFAULT_TOP
         skip = int(args['$skip'][0]) if '$skip' in args else 0
         order = args['$orderby'][0].split(',') if '$orderby' in args else None
         if order:
-            order = tuple(('-' if len(o.split()) > 1 and o.split()[1] == 'desc' else '')+o.split()[0] for o in order)
-        restriction = None
-        if container_class:
-            restriction = Restriction(SPropertyRestriction(
-                RELOP_EQ, PR_CONTAINER_CLASS_W,
-                SPropValue(PR_CONTAINER_CLASS_W, container_class)
-            ))
+            order = tuple(('-' if len(o.split()) > 1 and o.split()[1] == 'desc' else '') + o.split()[0] for o in order)
+
         return (generator(restriction=restriction, page_start=skip, page_limit=top, order=order), top, skip, count)
 
-    def create_message(self, folder, fields, all_fields=None):
+    @classmethod
+    def create_item(cls, folder, fields, all_fields=None):
         # TODO item.update and/or only save in the end
         item = folder.create_item()
 
-        for field in (all_fields or self.set_fields):
+        for field in (all_fields or cls.set_fields):
             if field in fields:
-                (all_fields or self.set_fields)[field](item, fields[field])
+                (all_fields or cls.set_fields)[field](item, fields[field])
 
         return item
 
-    def folder_gen(self, req, folder):
-        args = self.parse_qs(req)  # TODO generalize
+    @classmethod
+    def folder_gen(cls, req, folder):
+        args = cls.parse_qs(req)  # TODO generalize
         # TODO implement odata
         # TODO For now we will at least provide a way to filter by 'isRead eq false' to get unread mails
         # TODO filter will for now override search
@@ -251,7 +256,8 @@ class Resource(BaseResource):
                 def yielder(**kwargs):
                     for item in folder.items(query=query):
                         yield item
-                return self.generator(req, yielder, 0)
+
+                return cls.generator(req, yielder, 0)
 
         if '$search' in args:
             query = args['$search'][0]
@@ -259,6 +265,7 @@ class Resource(BaseResource):
             def yielder(**kwargs):
                 for item in folder.items(query=query):
                     yield item
-            return self.generator(req, yielder, 0)
+
+            return cls.generator(req, yielder, 0)
         else:
-            return self.generator(req, folder.items, folder.count)
+            return cls.generator(req, folder.items, folder.count)

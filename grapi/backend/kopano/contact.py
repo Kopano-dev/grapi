@@ -180,6 +180,8 @@ class DeletedContactResource(ItemResource):
 
 @experimental
 class ContactResource(ItemResource):
+    default_folder = 'contacts'
+
     fields = ItemResource.fields.copy()
     fields.update({
         'displayName': lambda item: item.name,
@@ -253,71 +255,53 @@ class ContactResource(ItemResource):
         'businessAddress': lambda item, arg: _set_phys_address(item, arg, PHYS_ADDRESS_BUSINESS),
         'otherAddress': lambda item, arg: _set_phys_address(item, arg, PHYS_ADDRESS_OTHER),
     }
+    message_class = 'IPM.Contact'
 
     deleted_resource = DeletedContactResource
 
-    def handle_get(self, req, resp, store, server, folderid, itemid):
-        folder = _folder(store, folderid or 'contacts')  # TODO all folders?
-
-        if itemid:
-            if itemid == 'delta':
-                self._handle_get_delta(req, resp, folder=folder)
-            else:
-                self._handle_get_with_itemid(req, resp, folder=folder, itemid=itemid)
-        else:
-            raise HTTPBadRequest("Missing contact itemid")
-
-    def _handle_get_delta(self, req, resp, folder):
-        req.context.deltaid = '{itemid}'
-        self.delta(req, resp, folder)
-
-    def _handle_get_with_itemid(self, req, resp, folder, itemid):
-        data = _item(folder, itemid)
-        self.respond(req, resp, data)
-
     def on_get(self, req, resp, userid=None, folderid=None, itemid=None, method=None):
-        handler = None
-
         if not method:
-            handler = self.handle_get
+            handler = self.get
         else:
             raise HTTPBadRequest("Unsupported contact segment '%s'" % method)
 
         server, store, userid = _server_store(req, userid, self.options)
-        handler(req, resp, store=store, server=server, folderid=folderid, itemid=itemid)
-
-    def handle_patch(self, req, resp, store, folder, itemid):
-        item = _item(folder, itemid)
-        fields = self.load_json(req)
-
-        for field, value in fields.items():
-            if field in self.set_fields:
-                self.set_fields[field](item, value)
-
-        self.respond(req, resp, item, ContactResource.fields)
-
-    def on_patch(self, req, resp, userid=None, folderid=None, itemid=None, method=None):
-        handler = None
-
-        if not method:
-            handler = self.handle_patch
-
-        else:
-            raise HTTPBadRequest("Unsupported message segment '%s'" % method)
-
-        server, store, userid = _server_store(req, userid, self.options)
-        folder = _folder(store, folderid or 'contacts')  # TODO all folders?
+        folder = _folder(store, folderid or self.default_folder)
         handler(req, resp, store=store, folder=folder, itemid=itemid)
 
-    def handle_delete(self, req, resp, store, server, folderid, itemid):
-        item = _item(store, itemid)
+    def on_post(self, req, resp, userid=None, folderid=None, itemid=None, method=None):
+        if method == 'copy' or method == 'microsoft.graph.copy':
+            handler = self.copy
 
-        store.delete(item)
+        elif method == 'move' or method == 'microsoft.graph.move':
+            handler = self.move
 
-        self.respond_204(resp)
+        elif method:
+            raise HTTPBadRequest("Unsupported contact segment '%s'" % method)
 
-    def on_delete(self, req, resp, userid=None, folderid=None, itemid=None):
-        handler = self.handle_delete
+        else:
+            raise HTTPBadRequest("Unsupported in contact")
 
         server, store, userid = _server_store(req, userid, self.options)
-        handler(req, resp, store=store, server=server, folderid=folderid, itemid=itemid)
+        folder = _folder(store, folderid or self.default_folder)  # TODO all folders?
+        handler(req, resp, store=store, folder=folder, itemid=itemid)
+
+    def on_patch(self, req, resp, userid=None, folderid=None, itemid=None, method=None):
+        if not method:
+            handler = self.patch
+        else:
+            raise HTTPBadRequest("Unsupported contact segment '%s'" % method)
+
+        server, store, userid = _server_store(req, userid, self.options)
+        folder = _folder(store, folderid or self.default_folder)  # TODO all folders?
+        handler(req, resp, store=store, folder=folder, itemid=itemid)
+
+    def on_delete(self, req, resp, userid=None, folderid=None, itemid=None):
+        handler = self.delete
+
+        server, store, userid = _server_store(req, userid, self.options)
+        if folderid:
+            folder = _folder(store, folderid)
+        else:
+            folder = store
+        handler(req, resp, store=folder, itemid=itemid)

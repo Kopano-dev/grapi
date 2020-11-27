@@ -1,12 +1,18 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
+from abc import abstractmethod
+import base64
+import falcon
+
+import kopano
 import calendar
 import codecs
 import datetime
 
 import dateutil
 
+from . import attachment
 from .resource import DEFAULT_TOP, Resource, _date
-from .utils import db_get, db_put, experimental
+from .utils import db_get, db_put, experimental, _item, HTTPBadRequest, _folder
 
 
 def get_body(req, item):
@@ -57,6 +63,125 @@ class ItemResource(Resource):
         'lastModifiedDateTime': lambda item: _date(item.last_modified),
         'categories': lambda item: item.categories,
     }
+    set_fields = None
+    message_class = None
+    default_folder = None
+
+    # This method needs to be overridden by all item resources
+    @classmethod
+    def default_folder_create(cls, store):
+        return _folder(store, cls.default_folder)
+
+    # This may be overridden in case any custom operations need to be done on the item
+    # after it has been created
+    @classmethod
+    def do_custom(cls, item, fields: dict):
+        pass
+
+    # This may be overridden in case the default folder to get items differs from the
+    # default create folder
+    @classmethod
+    def default_folder_get_all(cls, store):
+        return _folder(store, cls.default_folder)
+
+    @classmethod
+    def get_item_by_id(cls, folder, itemid):
+        if not itemid:
+            raise HTTPBadRequest("Missing itemId. Cannot get %s" % cls.message_class)
+        return _item(folder, itemid)
+
+    @classmethod
+    def get(cls, req, resp, store, folder, itemid):
+        if itemid == 'delta':
+            cls._get_delta(req, resp, folder=folder)
+        else:
+            cls._get_item_id(req, resp, folder=folder, itemid=itemid)
+
+    @classmethod
+    def _get_delta(cls, req, resp, folder):
+        req.context.deltaid = '{itemid}'
+        cls.delta(req, resp, folder=folder)
+
+    @classmethod
+    def _get_item_id(cls, req, resp, folder, itemid):
+        item = cls.get_item_by_id(folder, itemid)
+        cls.respond(req, resp, item)
+
+    @classmethod
+    def get_all(cls, req, resp, store, server, userid):
+        data = cls.folder_gen(req, cls.default_folder_get_all(store))
+        cls.respond(req, resp, data, cls.fields)
+
+    @classmethod
+    def get_attachments(self, req, resp, store, folder, itemid):
+        item = self.get_item_by_id(folder, itemid)
+        attachments = list(attachment.get_attachments(item))
+        data = (attachments, DEFAULT_TOP, 0, len(attachments))
+        self.respond(req, resp, data)
+
+    @classmethod
+    def add_attachments(self, req, resp, store, folder, itemid):
+        item = self.get_item_by_id(folder, itemid)
+        fields = self.load_json(req)
+        odataType = fields.get('@odata.type', None)
+        if odataType == '#microsoft.graph.fileAttachment':  # TODO other types
+            att = item.create_attachment(fields['name'], base64.urlsafe_b64decode(fields['contentBytes']))
+            self.respond(req, resp, att, attachment.AttachmentResource.fields)
+            resp.status = falcon.HTTP_201
+        else:
+            raise HTTPBadRequest("Unsupported attachment @odata.type: '%s'" % odataType)
+
+    @classmethod
+    def copy(cls, req, resp, store, folder, itemid):
+        cls._copy_or_move(req, resp, store=store, folder=folder, itemid=itemid)
+
+    @classmethod
+    def move(cls, req, resp, store, folder, itemid):
+        cls._copy_or_move(req, resp, store=store, folder=folder, itemid=itemid, move=True)
+
+    @classmethod
+    def _copy_or_move(cls, req, resp, store, folder, itemid, move=False):
+        item = cls.get_item_by_id(folder, itemid)
+        fields = cls.load_json(req)
+        to_folder = store.folder(entryid=fields['destinationId'].encode('ascii'))  # TODO ascii?
+        if move:
+            item = item.move(to_folder)
+        else:
+            item = item.copy(to_folder)
+
+    @classmethod
+    def create(cls, req, resp, fields: dict, parent):
+        try:
+            item = cls.create_item(cls.default_folder_create(parent), fields, cls.set_fields)
+        except kopano.errors.ArgumentError as e:
+            raise HTTPBadRequest("Invalid argument error '{}'".format(e))
+        item.message_class = cls.message_class
+        cls.do_custom(item, fields)
+        resp.status = falcon.HTTP_201
+        cls.respond(req, resp, item, cls.fields)
+
+    @classmethod
+    def patch(cls, req, resp, store, folder, itemid):
+        item = cls.get_item_by_id(folder, itemid)
+        fields = cls.load_json(req)
+
+        for field, value in fields.items():
+            if field in cls.set_fields:
+                cls.set_fields[field](item, value)
+
+        cls.do_custom(item, fields)
+        cls.respond(req, resp, item, cls.fields)
+
+    @classmethod
+    def do_custom_before_delete(cls, item):
+        pass
+
+    @classmethod
+    def delete(cls, req, resp, store, itemid):
+        item = cls.get_item_by_id(store, itemid)
+        cls.do_custom_before_delete(item)
+        store.delete(item)
+        cls.respond_204(resp)
 
     @experimental
     def delta(self, req, resp, folder):

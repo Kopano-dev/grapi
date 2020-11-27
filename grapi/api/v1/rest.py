@@ -64,8 +64,8 @@ class BackendMiddleware:
             ):
                 backend = self.default_backend.get('directory')
             elif method in (
-                'notebooks',
-                'notes'
+                'notes',
+                'notebooks'
             ):
                 backend = self.default_backend.get('note')
             elif method in (

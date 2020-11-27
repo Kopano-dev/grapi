@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-import base64
 
 import falcon
 import logging
@@ -24,7 +23,7 @@ from MAPI.Tags import (
 from . import attachment  # import as module since this is a circular import
 from .item import ItemResource, get_body, get_email, set_body
 from .resource import DEFAULT_TOP, _date, parse_datetime_timezone, _tzdate
-from .utils import HTTPBadRequest, _folder, _item, _server_store, _set_value_by_tag, experimental
+from .utils import HTTPBadRequest, _folder, _server_store, _set_value_by_tag, experimental
 
 
 PR_MESSAGE_DUE_DATE = "PT_SYSTIME:PSETID_Task:0x8105"
@@ -128,6 +127,8 @@ class DeletedTodoResource(ItemResource):
 
 @experimental
 class TaskResource(ItemResource):
+    default_folder = 'tasks'
+
     fields = ItemResource.fields.copy()
     fields.update({
         # TODO pyko shortcut for event messages
@@ -167,37 +168,15 @@ class TaskResource(ItemResource):
     deleted_resource = DeletedTodoResource
 
     relations = {
-        'attachments': lambda note: (note.attachments, attachment.FileAttachmentResource),  # TODO embedded
+        'attachments': lambda task: (task.attachments, attachment.FileAttachmentResource),  # TODO embedded
     }
 
-    def handle_get(self, req, resp, store, folder, itemid):
-        if itemid == 'delta':  # TODO move to MailFolder resource somehow?
-            self._handle_get_delta(req, resp, store=store, folder=folder)
-        else:
-            self._handle_get_with_itemid(req, resp, store=store, folder=folder, itemid=itemid)
-
-    def _handle_get_delta(self, req, resp, store, folder):
-        req.context.deltaid = '{itemid}'
-        self.delta(req, resp, folder=folder)
-
-    def _handle_get_with_itemid(self, req, resp, store, folder, itemid):
-        item = _item(folder, itemid)
-        self.respond(req, resp, item)
-
-    def handle_get_attachments(self, req, resp, store, folder, itemid):
-        item = _item(folder, itemid)
-        attachments = list(attachment.get_attachments(item))
-        data = (attachments, DEFAULT_TOP, 0, len(attachments))
-        self.respond(req, resp, data)
-
     def on_get(self, req, resp, userid=None, folderid=None, itemid=None, method=None):
-        handler = None
-
         if not method:
-            handler = self.handle_get
+            handler = self.get
 
         elif method == 'attachments':
-            handler = self.handle_get_attachments
+            handler = self.get_attachments
 
         elif method:
             raise HTTPBadRequest("Unsupported note segment '%s'" % method)
@@ -206,97 +185,55 @@ class TaskResource(ItemResource):
             raise HTTPBadRequest("Unsupported in note")
 
         server, store, userid = _server_store(req, userid, self.options)
-        folder = _folder(store, folderid or 'tasks')  # TODO all folders?
+        folder = _folder(store, folderid or self.default_folder)  # TODO all folders?
         handler(req, resp, store=store, folder=folder, itemid=itemid)
-
-    def handle_post_attachments(self, req, resp, store, folder, item):
-        fields = self.load_json(req)
-        odataType = fields.get('@odata.type', None)
-        if odataType == '#microsoft.graph.fileAttachment':  # TODO other types
-            att = item.create_attachment(fields['name'], base64.urlsafe_b64decode(fields['contentBytes']))
-            self.respond(req, resp, att, attachment.AttachmentResource.fields)
-            resp.status = falcon.HTTP_201
-        else:
-            raise HTTPBadRequest("Unsupported attachment @odata.type: '%s'" % odataType)
-
-    def handle_post_copy(self, req, resp, store, folder, item):
-        self._handle_post_copyOrMove(req, resp, store=store, item=item)
-
-    def handle_post_move(self, req, resp, store, folder, item):
-        self._handle_post_copyOrMove(req, resp, store=store, item=item, move=True)
-
-    def _handle_post_copyOrMove(self, req, resp, store, item, move=False):
-        fields = self.load_json(req)
-        to_folder = store.folder(entryid=fields['destinationId'].encode('ascii'))  # TODO ascii?
-        if not move:
-            item = item.copy(to_folder)
-        else:
-            item = item.move(to_folder)
 
     def on_post(self, req, resp, userid=None, folderid=None, itemid=None, method=None):
-        handler = None
-
         if method == 'attachments':
-            handler = self.handle_post_attachments
+            handler = self.add_attachments
 
         elif method == 'copy' or method == 'microsoft.graph.copy':
-            handler = self.handle_post_copy
+            handler = self.copy
 
         elif method == 'move' or method == 'microsoft.graph.move':
-            handler = self.handle_post_move
+            handler = self.move
 
         elif method:
-            raise HTTPBadRequest("Unsupported message segment '%s'" % method)
+            raise HTTPBadRequest("Unsupported task segment '%s'" % method)
 
         else:
-            raise HTTPBadRequest("Unsupported in message")
+            raise HTTPBadRequest("Unsupported in task")
 
         server, store, userid = _server_store(req, userid, self.options)
-        folder = _folder(store, folderid or 'tasks')  # TODO all folders?
-        item = _item(folder, itemid)
-        handler(req, resp, store=store, folder=folder, item=item)
-
-    def handle_patch(self, req, resp, store, folder, itemid):
-        item = _item(folder, itemid)
-        fields = self.load_json(req)
-
-        for field, value in fields.items():
-            if field in self.set_fields:
-                self.set_fields[field](item, value)
-
-        self.respond(req, resp, item, TaskResource.fields)
-
-    def on_patch(self, req, resp, userid=None, folderid=None, itemid=None, method=None):
-        handler = None
-
-        if not method:
-            handler = self.handle_patch
-
-        else:
-            raise HTTPBadRequest("Unsupported note segment '%s'" % method)
-
-        server, store, userid = _server_store(req, userid, self.options)
-        folder = _folder(store, folderid or 'tasks')  # TODO all folders?
+        folder = _folder(store, folderid or self.default_folder)  # TODO all folders?
         handler(req, resp, store=store, folder=folder, itemid=itemid)
 
-    def handle_delete(self, req, resp, store, itemid):
-        item = _item(store, itemid)
+    def on_patch(self, req, resp, userid=None, folderid=None, itemid=None, method=None):
+        if not method:
+            handler = self.patch
 
-        store.delete(item)
+        else:
+            raise HTTPBadRequest("Unsupported task segment '%s'" % method)
 
-        self.respond_204(resp)
+        server, store, userid = _server_store(req, userid, self.options)
+        folder = _folder(store, folderid or self.default_folder)  # TODO all folders?
+        handler(req, resp, store=store, folder=folder, itemid=itemid)
 
     def on_delete(self, req, resp, userid=None, folderid=None, itemid=None, method=None):
         handler = None
 
         if not method:
-            handler = self.handle_delete
+            handler = self.delete
 
         else:
-            raise HTTPBadRequest("Unsupported note segment '%s'" % method)
+            raise HTTPBadRequest("Unsupported task segment '%s'" % method)
 
         server, store, userid = _server_store(req, userid, self.options)
-        handler(req, resp, store=store, itemid=itemid)
+        if folderid:
+            folder = _folder(store, folderid)
+        else:
+            folder = store
+        handler(req, resp, store=folder, itemid=itemid)
 
 
 class EmbeddedTaskResource(TaskResource):
