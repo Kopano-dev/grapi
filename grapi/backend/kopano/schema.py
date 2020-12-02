@@ -176,27 +176,47 @@ _message_schema = {
             "type": "string"
         },
         "createdDateTime": {
-            "type": "string",
-            "format": "date-time"
+            "type": "object",
+            "dateTime": {
+                "type": "string"
+            },
+            "timeZone": {
+                "type": "string"
+            }
         },
         "flag": {
             "type": "object",
             "properties": {
                 "completedDateTime": {
-                    "type": "string",
-                    "format": "date-time"
+                    "type": "object",
+                    "dateTime": {
+                        "type": "string"
+                    },
+                    "timeZone": {
+                        "type": "string"
+                    }
                 },
                 "dueDateTime": {
-                    "type": "string",
-                    "format": "date-time"
+                    "type": "object",
+                    "dateTime": {
+                        "type": "string"
+                    },
+                    "timeZone": {
+                        "type": "string"
+                    }
                 },
                 "flagStatus": {
                     "type": "string",
                     "enum": ["notFlagged", "complete", "flagged"]
                 },
                 "startDateTime": {
-                    "type": "string",
-                    "format": "date-time"
+                    "type": "object",
+                    "dateTime": {
+                        "type": "string"
+                    },
+                    "timeZone": {
+                        "type": "string"
+                    }
                 }
             },
             "dependencies": {
@@ -215,7 +235,7 @@ _message_schema = {
         },
         "importance": {
             "type": "string",
-            "enum": ["Low", "Normal", "High"]
+            "enum": ["Low", "Normal", "High", "low", "normal", "high"]
         },
         "inferenceClassification": {
             "type": "string",
@@ -262,8 +282,13 @@ _message_schema = {
             "minLength": 1
         },
         "receivedDateTime": {
-            "type": "string",
-            "format": "date-time"
+            "type": "object",
+            "dateTime": {
+                "type": "string"
+            },
+            "timeZone": {
+                "type": "string"
+            }
         },
         "replyTo": {
             "$ref": "#/definitions/optionalRecipients",
@@ -272,8 +297,13 @@ _message_schema = {
             "$ref": "#/definitions/recipient"
         },
         "sentDateTime": {
-            "type": "string",
-            "format": "date-time"
+            "type": "object",
+            "dateTime": {
+                "type": "string"
+            },
+            "timeZone": {
+                "type": "string"
+            }
         },
         "subject": {
             "type": "string",
@@ -302,8 +332,13 @@ _message_schema = {
                         "type": "boolean"
                     },
                     "lastModifiedDateTime": {
-                        "type": "string",
-                        "format": "date-time"
+                        "type": "object",
+                        "dateTime": {
+                            "type": "string"
+                        },
+                        "timeZone": {
+                            "type": "string"
+                        }
                     },
                     "name": {
                         "type": "string"
@@ -335,15 +370,25 @@ _message_schema = {
                                 "type": "string"
                             },
                             "createdDateTime": {
-                                "type": "string",
-                                "format": "date-time"
+                                "type": "object",
+                                "dateTime": {
+                                    "type": "string"
+                                },
+                                "timeZone": {
+                                    "type": "string"
+                                }
                             },
                             "id": {
                                 "type": "string"
                             },
                             "lastModifiedDateTime": {
-                                "type": "string",
-                                "format": "date-time"
+                                "type": "object",
+                                "dateTime": {
+                                    "type": "string"
+                                },
+                                "timeZone": {
+                                    "type": "string"
+                                }
                             }
                         },
                         "required": [
