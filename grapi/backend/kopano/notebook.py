@@ -2,7 +2,7 @@
 
 from .folder import FolderResource
 from .note import NoteResource
-from .utils import HTTPBadRequest, _folder, _server_store, experimental
+from .utils import HTTPBadRequest, _server_store, experimental
 
 
 class DeletedNotebookResource(FolderResource):
@@ -30,44 +30,15 @@ class NotebookResource(FolderResource):
     container_classes = (None, 'IPF.StickyNote')
     container_class = 'IPF.StickyNote'
 
-    def handle_get_childFolders(self, req, resp, store, folderid):
-        data = _folder(store, folderid)
-
-        data = self.generator(req, data.folders, data.subfolder_count_recursive)
-        self.respond(req, resp, data)
-
-    def handle_get_notes(self, req, resp, store, folderid):
-        data = _folder(store, folderid)
-
-        data = self.folder_gen(req, data)
-        self.respond(req, resp, data, NoteResource.fields)
-
-    def handle_get(self, req, resp, store, folderid):
-        if folderid:
-            if folderid == 'delta':
-                self._handle_get_delta(req, resp, store=store)
-            else:
-                self._handle_get_with_folderid(req, resp, store=store, folderid=folderid)
-
-    def _handle_get_delta(self, req, resp, store):
-        req.context.deltaid = '{folderid}'
-        self.delta(req, resp, store=store)
-
-    def _handle_get_with_folderid(self, req, resp, store, folderid):
-        data = _folder(store, folderid)
-        self.respond(req, resp, data)
-
     def on_get(self, req, resp, userid=None, folderid=None, method=None):
-        handler = None
-
         if not method:
-            handler = self.handle_get
+            handler = self.get
 
         elif method == 'childFolders':
-            handler = self.handle_get_childFolders
+            handler = self.get_children
 
         elif method == 'notes':
-            handler = self.handle_get_notes
+            handler = NoteResource.get_all_from_folder
 
         else:
             raise HTTPBadRequest("Unsupported notebook segment '%s'" % method)
@@ -75,17 +46,9 @@ class NotebookResource(FolderResource):
         server, store, userid = _server_store(req, userid, self.options)
         handler(req, resp, store=store, folderid=folderid)
 
-    def handle_post_notes(self, req, resp, store, folderid):
-        folder = _folder(store, folderid)
-        fields = self.load_json(req)
-        item = self.create_item(folder, fields, NoteResource.set_fields)
-        self.respond(req, resp, item, NoteResource.fields)
-
     def on_post(self, req, resp, userid=None, folderid=None, method=None):
-        handler = None
-
         if method == 'notes':
-            handler = self.handle_post_notes
+            handler = NoteResource.create_in_folder
 
         elif method == 'childFolders':
             handler = self.create_child
@@ -103,4 +66,4 @@ class NotebookResource(FolderResource):
             raise HTTPBadRequest("Unsupported in notebook")
 
         server, store, userid = _server_store(req, userid, self.options)
-        handler(req, resp, store, folderid)
+        handler(req, resp, store=store, folderid=folderid)

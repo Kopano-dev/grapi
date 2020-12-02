@@ -1,9 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-import falcon
-
 from .contact import ContactResource
 from .folder import FolderResource
-from .utils import HTTPBadRequest, _folder, _server_store, experimental
+from .utils import HTTPBadRequest, _server_store, experimental
 
 
 class DeletedContactFolderResource(FolderResource):
@@ -34,36 +32,18 @@ class ContactFolderResource(FolderResource):
         req.context.deltaid = '{folderid}'
         self.delta(req, resp, store)
 
-    def handle_get(self, req, resp, store, folderid):
-        folder = _folder(store, folderid)
-        self.respond(req, resp, folder, self.fields)
-
-    def handle_get_contacts(self, req, resp, store, folderid):
-        folder = _folder(store, folderid)
-        data = self.folder_gen(req, folder)
-        fields = ContactResource.fields
-        self.respond(req, resp, data, fields)
-
-    def handle_get_childFolders(self, req, resp, store, folderid):
-        data = _folder(store, folderid)
-
-        data = self.generator(req, data.folders, data.subfolder_count_recursive)
-        self.respond(req, resp, data)
-
     def on_get(self, req, resp, userid=None, folderid=None, method=None):
-        handler = None
-
         if folderid == 'delta':
             handler = self.handle_get_delta
         else:
             if not method:
-                handler = self.handle_get
+                handler = self.get
 
             elif method == 'contacts':
-                handler = self.handle_get_contacts
+                handler = ContactResource.get_all_from_folder
 
             elif method == 'childFolders':
-                handler = self.handle_get_childFolders
+                handler = self.get_children
 
             elif method:
                 raise HTTPBadRequest("Unsupported contactfolder segment '%s'" % method)
@@ -74,27 +54,12 @@ class ContactFolderResource(FolderResource):
         server, store, userid = _server_store(req, userid, self.options)
         handler(req, resp, store=store, folderid=folderid)
 
-    def handle_post_contacts(self, req, resp, store, folderid):
-        folder = _folder(store, folderid)
-        fields = self.load_json(req)
-        item = self.create_item(folder, fields, ContactResource.set_fields)
-
-        self.respond(req, resp, item, ContactResource.fields)
-        resp.status = falcon.HTTP_201
-
-    def handle_post_childFolders(self, req, resp, store, folderid):
-        folder = _folder(store, folderid)
-        fields = self.load_json(req)
-        self.create(req, resp, fields, folder)
-
     def on_post(self, req, resp, userid=None, folderid=None, method=None):
-        handler = None
-
         if method == 'contacts':
-            handler = self.handle_post_contacts
+            handler = ContactResource.create_in_folder
 
         elif method == 'childFolders':
-            handler = self.handle_post_childFolders
+            handler = self.create_child
 
         elif method == 'copy':
             handler = self.copy

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-from abc import abstractmethod
 import base64
 import falcon
+import logging
 
 import kopano
 import calendar
@@ -65,12 +65,12 @@ class ItemResource(Resource):
     }
     set_fields = None
     message_class = None
-    default_folder = None
+    validation_schema = None
 
     # This method needs to be overridden by all item resources
-    @classmethod
-    def default_folder_create(cls, store):
-        return _folder(store, cls.default_folder)
+    def __init__(self, options):
+        super().__init__(options)
+        self.deleted_resource = None
 
     # This may be overridden in case any custom operations need to be done on the item
     # after it has been created
@@ -82,7 +82,7 @@ class ItemResource(Resource):
     # default create folder
     @classmethod
     def default_folder_get_all(cls, store):
-        return _folder(store, cls.default_folder)
+        return _folder(store, cls.default_folder_id)
 
     @classmethod
     def get_item_by_id(cls, folder, itemid):
@@ -91,7 +91,8 @@ class ItemResource(Resource):
         return _item(folder, itemid)
 
     @classmethod
-    def get(cls, req, resp, store, folder, itemid):
+    def get(cls, req, resp, store, folderid, itemid):
+        folder = cls.get_folder_by_id(store, folderid)
         if itemid == 'delta':
             cls._get_delta(req, resp, folder=folder)
         else:
@@ -108,39 +109,47 @@ class ItemResource(Resource):
         cls.respond(req, resp, item)
 
     @classmethod
-    def get_all(cls, req, resp, store, server, userid):
-        data = cls.folder_gen(req, cls.default_folder_get_all(store))
+    def get_all(cls, req, resp, store, server=None, userid=None):
+        cls.get_all_from_folder(req, resp, store, cls.default_folder_id)
+
+    @classmethod
+    def get_all_from_folder(cls, req, resp, store, folderid):
+        folder = cls.get_folder_by_id(store, folderid)
+        data = cls.folder_gen(req, folder)
         cls.respond(req, resp, data, cls.fields)
 
     @classmethod
-    def get_attachments(self, req, resp, store, folder, itemid):
-        item = self.get_item_by_id(folder, itemid)
+    def get_attachments(cls, req, resp, store, folderid, itemid):
+        folder = cls.get_folder_by_id(store, folderid)
+        item = cls.get_item_by_id(folder, itemid)
         attachments = list(attachment.get_attachments(item))
         data = (attachments, DEFAULT_TOP, 0, len(attachments))
-        self.respond(req, resp, data)
+        cls.respond(req, resp, data)
 
     @classmethod
-    def add_attachments(self, req, resp, store, folder, itemid):
-        item = self.get_item_by_id(folder, itemid)
-        fields = self.load_json(req)
+    def add_attachments(cls, req, resp, store, folderid, itemid):
+        folder = cls.get_folder_by_id(store, folderid)
+        item = cls.get_item_by_id(folder, itemid)
+        fields = cls.load_json(req)
         odataType = fields.get('@odata.type', None)
         if odataType == '#microsoft.graph.fileAttachment':  # TODO other types
             att = item.create_attachment(fields['name'], base64.urlsafe_b64decode(fields['contentBytes']))
-            self.respond(req, resp, att, attachment.AttachmentResource.fields)
+            cls.respond(req, resp, att, attachment.AttachmentResource.fields)
             resp.status = falcon.HTTP_201
         else:
             raise HTTPBadRequest("Unsupported attachment @odata.type: '%s'" % odataType)
 
     @classmethod
-    def copy(cls, req, resp, store, folder, itemid):
-        cls._copy_or_move(req, resp, store=store, folder=folder, itemid=itemid)
+    def copy(cls, req, resp, store, folderid, itemid):
+        cls._copy_or_move(req, resp, store=store, folderid=folderid, itemid=itemid)
 
     @classmethod
-    def move(cls, req, resp, store, folder, itemid):
-        cls._copy_or_move(req, resp, store=store, folder=folder, itemid=itemid, move=True)
+    def move(cls, req, resp, store, folderid, itemid):
+        cls._copy_or_move(req, resp, store=store, folderid=folderid, itemid=itemid, move=True)
 
     @classmethod
-    def _copy_or_move(cls, req, resp, store, folder, itemid, move=False):
+    def _copy_or_move(cls, req, resp, store, folderid, itemid, move=False):
+        folder = cls.get_folder_by_id(store, folderid)
         item = cls.get_item_by_id(folder, itemid)
         fields = cls.load_json(req)
         to_folder = store.folder(entryid=fields['destinationId'].encode('ascii'))  # TODO ascii?
@@ -150,18 +159,34 @@ class ItemResource(Resource):
             item = item.copy(to_folder)
 
     @classmethod
-    def create(cls, req, resp, fields: dict, parent):
+    def create(cls, req, resp, store):
+        if cls.alt_folder_id:
+            folder = cls.alt_folder_id
+        else:
+            folder = cls.default_folder_id
+        cls.create_in_folder(req, resp, store, folder)
+
+    @classmethod
+    def create_in_folder(cls, req, resp, store, folderid):
+        folder = cls.get_folder_by_id(store, folderid)
+        fields = cls.load_json(req)
+        if cls.validation_schema:
+            cls.validate_json(cls.validation_schema, fields)
         try:
-            item = cls.create_item(cls.default_folder_create(parent), fields, cls.set_fields)
+            item = cls.create_item(folder, fields, cls.set_fields)
         except kopano.errors.ArgumentError as e:
             raise HTTPBadRequest("Invalid argument error '{}'".format(e))
-        item.message_class = cls.message_class
+        if cls.message_class:
+            item.message_class = cls.message_class
+        else:
+            logging.warning("No message_class defined for item: %s" % cls.__class__.__name__)
         cls.do_custom(item, fields)
         resp.status = falcon.HTTP_201
         cls.respond(req, resp, item, cls.fields)
 
     @classmethod
-    def patch(cls, req, resp, store, folder, itemid):
+    def patch(cls, req, resp, store, folderid, itemid):
+        folder = cls.get_folder_by_id(store, folderid)
         item = cls.get_item_by_id(folder, itemid)
         fields = cls.load_json(req)
 
@@ -177,8 +202,12 @@ class ItemResource(Resource):
         pass
 
     @classmethod
-    def delete(cls, req, resp, store, itemid):
-        item = cls.get_item_by_id(store, itemid)
+    def delete(cls, req, resp, store, folderid, itemid):
+        if folderid:
+            folder = _folder(store, folderid)
+        else:
+            folder = store
+        item = cls.get_item_by_id(folder, itemid)
         cls.do_custom_before_delete(item)
         store.delete(item)
         cls.respond_204(resp)

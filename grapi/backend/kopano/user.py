@@ -11,7 +11,6 @@ from .calendar import CalendarResource
 from .contact import ContactResource
 from .contactfolder import ContactFolderResource
 from .event import EventResource
-from .folder import FolderResource
 from .mailfolder import MailFolderResource
 from .message import MessageResource
 from .note import NoteResource
@@ -19,7 +18,6 @@ from .notebook import NotebookResource
 from .profilephoto import ProfilePhotoResource
 from .reminder import ReminderResource
 from .resource import DEFAULT_TOP, Resource, _start_end
-from .schema import event_schema
 from .task import TaskResource
 from .todolist import TodoListResource
 from .utils import HTTPBadRequest, HTTPNotFound, _server_store, experimental
@@ -156,15 +154,6 @@ class UserResource(Resource):
         data = self.generator(req, yielder)
         self.respond(req, resp, data)
 
-    def handle_get_calendarView(self, req, resp, store, server, userid):
-        start, end = _start_end(req)
-
-        def yielder(**kwargs):
-            for occ in store.calendar.occurrences(start, end, **kwargs):
-                yield occ
-        data = self.generator(req, yielder)
-        self.respond(req, resp, data, EventResource.fields)
-
     @experimental
     def handle_get_reminderView(self, req, resp, store, server, userid):
         start, end = _start_end(req)
@@ -195,8 +184,6 @@ class UserResource(Resource):
 
     # TODO redirect to other resources?
     def on_get(self, req, resp, userid=None, method=None):
-        handler = None
-
         if not method:
             handler = self.handle_get
 
@@ -230,8 +217,8 @@ class UserResource(Resource):
         elif method == 'events':  # TODO multiple calendars?
             handler = EventResource.get_all
 
-        elif method == 'calendarView':  # TODO multiple calendars? merge code with calendar.py
-            handler = self.handle_get_calendarView
+        elif method == 'calendarView':  # TODO multiple calendars?
+            handler = CalendarResource.get_calendar_view
 
         elif method == 'reminderView':  # TODO multiple calendars?
             # TODO use restriction in pyko: calendar.reminders(start, end)?
@@ -258,16 +245,15 @@ class UserResource(Resource):
         handler(req, resp, store=store, server=server, userid=userid)
 
     @experimental
-    def handle_post_sendMail(self, req, resp, fields, parent):
-        message = self.create_item(parent.outbox, fields['message'], MessageResource.set_fields)
+    def handle_post_sendMail(self, req, resp, store):
+        fields = self.load_json(req)
+        message = self.create_item(store.outbox, fields['message'], MessageResource.set_fields)
         copy_to_sentmail = fields.get('SaveToSentItems', 'true') == 'true'
         message.send(copy_to_sentmail=copy_to_sentmail)
         resp.status = falcon.HTTP_202
 
     # TODO redirect to other resources?
     def on_post(self, req, resp, userid=None, method=None):
-        handler = None
-
         if method == 'sendMail':
             handler = self.handle_post_sendMail
 
@@ -308,5 +294,4 @@ class UserResource(Resource):
             raise HTTPBadRequest("Unsupported in user")
 
         server, store, userid = _server_store(req, userid, self.options)
-        fields = self.load_json(req)
-        handler(req, resp, fields=fields, parent=store)
+        handler(req, resp, store=store)

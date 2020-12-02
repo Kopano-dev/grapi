@@ -74,22 +74,42 @@ class FolderResource(Resource):
         cls.respond(req, resp, data, cls.fields)
 
     @classmethod
-    def create_child(cls, req, resp, store, folder_id):
-        folder = _folder(store, folder_id)
-        fields = cls.load_json(req)
-        cls.create(req, resp, fields, folder)
-
-    @classmethod
     def name_field(cls, fields: dict):
         return fields['displayName']
 
     validation_schema = folder_schema
 
     @classmethod
-    def create(cls, req, resp, fields: dict, parent):
+    def get(cls, req, resp, store, folderid):
+        if folderid == 'delta':
+            cls._get_delta(req, resp, store=store)
+        else:
+            cls._get_by_id(req, resp, store=store, folderid=folderid)
+
+    @classmethod
+    def _get_delta(cls, req, resp, store):
+        req.context.deltaid = '{folderid}'
+        cls.delta(req, resp, store=store)
+
+    @classmethod
+    def _get_by_id(cls, req, resp, store, folderid):
+        folder = cls.get_folder_by_id(store, folderid)
+        if not folder:
+            raise falcon.HTTPNotFound(description="Folder not found")
+        cls.respond(req, resp, folder, cls.fields)
+
+    @classmethod
+    def get_children(cls, req, resp, store, folderid):
+        folder = cls.get_folder_by_id(store, folderid)
+        children = cls.generator(req, folder.folders, folder.subfolder_count_recursive)
+        cls.respond(req, resp, children)
+
+    @classmethod
+    def create(cls, req, resp, store):
+        fields = cls.load_json(req)
         cls.validate_json(cls.validation_schema, fields)
         try:
-            folder = parent.create_folder(cls.name_field(fields))
+            folder = store.create_folder(cls.name_field(fields))
             folder.container_class = cls.container_class
         except kopano.errors.DuplicateError:
             raise HTTPConflict("'%s' folder already exists" % fields['displayName'])
@@ -97,19 +117,24 @@ class FolderResource(Resource):
         cls.respond(req, resp, folder, cls.fields)
 
     @classmethod
+    def create_child(cls, req, resp, store, folderid):
+        folder = cls.get_folder_by_id(store, folderid)
+        cls.create(req, resp, folder)
+
+    @classmethod
     def copy(cls, req, resp, store, folderid):
-        cls._copy_or_move(req, resp, store=store, folderid=folderid, move=False)
+        cls._copy_or_move(req, resp, store, folderid, move=False)
 
     @classmethod
     def move(cls, req, resp, store, folderid):
-        cls._copy_or_move(req, resp, store=store, folderid=folderid, move=True)
+        cls._copy_or_move(req, resp, store, folderid, move=True)
 
     @classmethod
     def _copy_or_move(cls, req, resp, store, folderid, move=False):
         """Handle POST request for Copy or Move actions."""
+        folder = cls.get_folder_by_id(store, folderid)
         fields = cls.load_json(req)
         cls.validate_json(destination_id_schema, fields)
-        folder = _folder(store, folderid)
         if not folder:
             raise falcon.HTTPNotFound(description="source folder not found")
 
@@ -131,7 +156,7 @@ class FolderResource(Resource):
         new_folder = to_folder.folder(folder.name)
         cls.respond(req, resp, new_folder, cls.fields)
 
-    def on_delete(self, req, resp, userid=None, folderid=None):
+    def on_delete(self, req, resp, userid=None, folderid=None, method=None):
         server, store, userid = _server_store(req, userid, self.options)
         folder = _folder(store, folderid)
 

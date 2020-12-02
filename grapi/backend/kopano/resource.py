@@ -7,12 +7,14 @@ import dateutil.parser
 import pytz
 import tzlocal
 
+import falcon
+
 from grapi.api.v1.resource import HTTPBadRequest
 from grapi.api.v1.resource import Resource as BaseResource
 from grapi.api.v1.resource import _dumpb_json, _encode_qs, _parse_qs
 from grapi.api.v1.timezone import to_timezone
 
-from .utils import _handle_exception
+from .utils import _handle_exception, _folder
 
 UTC = pytz.utc
 LOCAL = tzlocal.get_localzone()
@@ -111,12 +113,21 @@ def _start_end(req):
 class Resource(BaseResource):
     fields = None
     set_fields = None
+    default_folder_id = None
+    alt_folder_id = None
 
     def __init__(self, options):
         super().__init__(options)
 
     def exceptionHandler(self, ex, req, resp, **params):
         _handle_exception(ex, req)
+
+    @classmethod
+    def get_folder_by_id(cls, store, folderid):
+        folder = _folder(store, folderid or cls.default_folder_id)
+        if not folder:
+            raise falcon.HTTPNotFound(description="Folder not found")
+        return folder
 
     @classmethod
     def get_fields(cls, req, obj, fields, all_fields):

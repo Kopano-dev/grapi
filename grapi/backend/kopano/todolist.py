@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-
 from .folder import FolderResource
 from .task import TaskResource
-from .utils import HTTPBadRequest, _folder, _server_store, experimental
+from .utils import HTTPBadRequest, _server_store, experimental
 
 
 class DeletedTodoListResource(FolderResource):
@@ -30,62 +29,25 @@ class TodoListResource(FolderResource):
     container_classes = (None, 'IPF.Task')
     container_class = 'IPF.Task'
 
-    def handle_get_childFolders(self, req, resp, store, folderid):
-        data = _folder(store, folderid)
-
-        data = self.generator(req, data.folders, data.subfolder_count_recursive)
-        self.respond(req, resp, data)
-
-    def handle_get_notes(self, req, resp, store, folderid):
-        data = _folder(store, folderid)
-
-        data = self.folder_gen(req, data)
-        self.respond(req, resp, data, TaskResource.fields)
-
-    def handle_get(self, req, resp, store, folderid):
-        if folderid:
-            if folderid == 'delta':
-                self._handle_get_delta(req, resp, store=store)
-            else:
-                self._handle_get_with_folderid(req, resp, store=store, folderid=folderid)
-
-    def _handle_get_delta(self, req, resp, store):
-        req.context.deltaid = '{folderid}'
-        self.delta(req, resp, store=store)
-
-    def _handle_get_with_folderid(self, req, resp, store, folderid):
-        data = _folder(store, folderid)
-        self.respond(req, resp, data)
-
     def on_get(self, req, resp, userid=None, folderid=None, method=None):
-        handler = None
-
         if not method:
-            handler = self.handle_get
+            handler = self.get
 
         elif method == 'childFolders':
-            handler = self.handle_get_childFolders
+            handler = self.get_children
 
         elif method == 'notes':
-            handler = self.handle_get_notes
+            handler = TaskResource.get_all_from_folder
 
         else:
-            raise HTTPBadRequest("Unsupported notebook segment '%s'" % method)
+            raise HTTPBadRequest("Unsupported todolist segment '%s'" % method)
 
         server, store, userid = _server_store(req, userid, self.options)
         handler(req, resp, store=store, folderid=folderid)
 
-    def handle_post_tasks(self, req, resp, store, folderid):
-        folder = _folder(store, folderid)
-        fields = self.load_json(req)
-        item = self.create_item(folder, fields, TaskResource.set_fields)
-        self.respond(req, resp, item, TaskResource.fields)
-
     def on_post(self, req, resp, userid=None, folderid=None, method=None):
-        handler = None
-
         if method == 'tasks':
-            handler = self.handle_post_tasks
+            handler = TaskResource.create_in_folder
 
         elif method == 'childFolders':
             handler = self.create_child
@@ -103,4 +65,4 @@ class TodoListResource(FolderResource):
             raise HTTPBadRequest("Unsupported in notebook")
 
         server, store, userid = _server_store(req, userid, self.options)
-        handler(req, resp, store, folderid)
+        handler(req, resp, store=store, folderid=folderid)

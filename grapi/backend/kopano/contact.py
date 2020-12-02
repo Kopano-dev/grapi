@@ -1,11 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-
-from .item import ItemResource
 import logging
 from datetime import datetime
 from .item import ItemResource
 from .resource import _date
-from .utils import HTTPBadRequest, _folder, _item, _server_store, _set_value_by_tag, _set_value_per_tag, experimental
+from .utils import HTTPBadRequest, _server_store, _set_value_by_tag, _set_value_per_tag, experimental
 
 from MAPI.Tags import (
     PR_ATTACHMENT_CONTACTPHOTO, PR_GIVEN_NAME_W, PR_MIDDLE_NAME_W,
@@ -180,7 +178,7 @@ class DeletedContactResource(ItemResource):
 
 @experimental
 class ContactResource(ItemResource):
-    default_folder = 'contacts'
+    default_folder_id = 'contacts'
 
     fields = ItemResource.fields.copy()
     fields.update({
@@ -266,8 +264,7 @@ class ContactResource(ItemResource):
             raise HTTPBadRequest("Unsupported contact segment '%s'" % method)
 
         server, store, userid = _server_store(req, userid, self.options)
-        folder = _folder(store, folderid or self.default_folder)
-        handler(req, resp, store=store, folder=folder, itemid=itemid)
+        handler(req, resp, store=store, folderid=folderid, itemid=itemid)
 
     def on_post(self, req, resp, userid=None, folderid=None, itemid=None, method=None):
         if method == 'copy' or method == 'microsoft.graph.copy':
@@ -283,8 +280,7 @@ class ContactResource(ItemResource):
             raise HTTPBadRequest("Unsupported in contact")
 
         server, store, userid = _server_store(req, userid, self.options)
-        folder = _folder(store, folderid or self.default_folder)  # TODO all folders?
-        handler(req, resp, store=store, folder=folder, itemid=itemid)
+        handler(req, resp, store=store, folderid=folderid, itemid=itemid)
 
     def on_patch(self, req, resp, userid=None, folderid=None, itemid=None, method=None):
         if not method:
@@ -293,15 +289,10 @@ class ContactResource(ItemResource):
             raise HTTPBadRequest("Unsupported contact segment '%s'" % method)
 
         server, store, userid = _server_store(req, userid, self.options)
-        folder = _folder(store, folderid or self.default_folder)  # TODO all folders?
-        handler(req, resp, store=store, folder=folder, itemid=itemid)
+        handler(req, resp, store=store, folderid=folderid, itemid=itemid)
 
     def on_delete(self, req, resp, userid=None, folderid=None, itemid=None):
         handler = self.delete
 
         server, store, userid = _server_store(req, userid, self.options)
-        if folderid:
-            folder = _folder(store, folderid)
-        else:
-            folder = store
-        handler(req, resp, store=folder, itemid=itemid)
+        handler(req, resp, store=store, folderid=folderid, itemid=itemid)

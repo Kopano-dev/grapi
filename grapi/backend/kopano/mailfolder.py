@@ -1,13 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-
-import falcon
-from MAPI.Struct import MAPIErrorCollision
-
-from grapi.api.v1.resource import HTTPBadRequest, HTTPConflict
+from grapi.api.v1.resource import HTTPBadRequest
 from .folder import FolderResource
 from .message import MessageResource
-from .schema import destination_id_schema, message_schema
-from .utils import _folder, _server_store, experimental
+from .utils import _server_store, experimental
 
 
 class DeletedMailFolderResource(FolderResource):
@@ -41,59 +36,22 @@ class MailFolderResource(FolderResource):
     deleted_resource = DeletedMailFolderResource
     container_classes = (None, 'IPF.Note')
 
-    def handle_get_childFolders(self, req, resp, store, folderid):
-        data = _folder(store, folderid)
-        data = self.generator(req, data.folders, data.subfolder_count_recursive)
-        self.respond(req, resp, data)
-
-    def handle_get_messages(self, req, resp, store, folderid):
-        data = _folder(store, folderid)
-        data = self.folder_gen(req, data)
-        self.respond(req, resp, data, MessageResource.fields)
-
-    def handle_get(self, req, resp, store, folderid):
-        if folderid:
-            if folderid == 'delta':
-                self._handle_get_delta(req, resp, store=store)
-            else:
-                self._handle_get_with_folderid(req, resp, store=store, folderid=folderid)
-
-    def _handle_get_delta(self, req, resp, store):
-        req.context.deltaid = '{folderid}'
-        self.delta(req, resp, store=store)
-
-    def _handle_get_with_folderid(self, req, resp, store, folderid):
-        data = _folder(store, folderid)
-        if not data:
-            raise falcon.HTTPNotFound(description="folder not found")
-        self.respond(req, resp, data)
-
     def on_get(self, req, resp, userid=None, folderid=None, method=None):
         if method is None:
-            handler = self.handle_get
+            handler = self.get
         elif method == "childFolders":
-            handler = self.handle_get_childFolders
+            handler = self.get_children
         elif method == "messages":
-            handler = self.handle_get_messages
+            handler = MessageResource.get_all_from_folder
         else:
             raise HTTPBadRequest("Unsupported mailFolder segment '%s'" % method)
 
         server, store, userid = _server_store(req, userid, self.options)
         handler(req, resp, store=store, folderid=folderid)
 
-    def handle_post_messages(self, req, resp, store, folderid):
-        fields = self.load_json(req)
-        self.validate_json(message_schema, fields)
-        folder = _folder(store, folderid)
-        item = self.create_item(folder, fields, MessageResource.set_fields)
-        resp.status = falcon.HTTP_201
-        self.respond(req, resp, item, MessageResource.fields)
-
     def on_post(self, req, resp, userid=None, folderid=None, method=None):
-        handler = None
-
         if method == 'messages':
-            handler = self.handle_post_messages
+            handler = MessageResource.create_in_folder
 
         elif method == 'childFolders':
             handler = self.create_child
@@ -111,4 +69,4 @@ class MailFolderResource(FolderResource):
             raise HTTPBadRequest("Unsupported in mailfolder")
 
         server, store, userid = _server_store(req, userid, self.options)
-        handler(req, resp, store, folderid)
+        handler(req, resp, store=store, folderid=folderid)

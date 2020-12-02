@@ -1,16 +1,16 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-import base64
 import binascii
 
 import dateutil.parser
 import falcon
 import kopano
 
-from .attachment import AttachmentResource
+from kopano import Store
+from .schema import event_schema
 from .item import ItemResource, get_body, get_email, set_body
-from .resource import DEFAULT_TOP, _date, _start_end, _tzdate, set_date
+from .resource import _date, _start_end, _tzdate, set_date
 from .schema import mr_schema
-from .utils import (HTTPBadRequest, _folder, _server_store, experimental)
+from .utils import (HTTPBadRequest, _server_store)
 
 pattern_map = {
     'monthly': 'absoluteMonthly',
@@ -176,13 +176,16 @@ class EventResource(ItemResource):
     @classmethod
     def get_item_by_id(cls, folder, itemid):
         try:
+            if isinstance(folder, Store):
+                folder = cls.get_folder_by_id(folder, cls.default_folder_id)
             return folder.event(itemid)
         except binascii.Error:
             raise HTTPBadRequest('Event id is malformed')
         except kopano.errors.NotFoundError:
             raise falcon.HTTPNotFound(description='Item not found')
 
-    default_folder = 'calendar'
+    default_folder_id = 'calendar'
+    validation_schema = event_schema
 
     fields = ItemResource.fields.copy()
     fields.update({
@@ -232,14 +235,8 @@ class EventResource(ItemResource):
 
     # TODO delta functionality seems to include expanding recurrences!? check with MSGE
 
-    @experimental
-    def handle_get_attachments(self, req, resp, folder, itemid):
-        event = self.get_item_by_id(folder, itemid)
-        attachments = list(event.attachments(embedded=True))
-        data = (attachments, DEFAULT_TOP, 0, len(attachments))
-        self.respond(req, resp, data, AttachmentResource.fields)
-
-    def handle_get_instances(self, req, resp, folder, itemid):
+    def handle_get_instances(self, req, resp, store, folderid, itemid):
+        folder = self.get_folder_by_id(store, folderid)
         event = self.get_item_by_id(folder, itemid)
         start, end = _start_end(req)
 
@@ -250,8 +247,6 @@ class EventResource(ItemResource):
         self.respond(req, resp, data)
 
     def on_get(self, req, resp, userid=None, folderid=None, eventid=None, method=None):
-        handler = None
-
         if method == 'attachments':
             handler = self.get_attachments
 
@@ -265,10 +260,10 @@ class EventResource(ItemResource):
             handler = self.get
 
         server, store, userid = _server_store(req, userid, self.options)
-        folder = _folder(store, folderid or self.default_folder)
-        handler(req, resp, store=store, folder=folder, itemid=eventid)
+        handler(req, resp, store=store, folderid=folderid, itemid=eventid)
 
-    def handle_post_accept(self, req, resp, store, folder, itemid):
+    def handle_post_accept(self, req, resp, store, folderid, itemid):
+        folder = self.get_folder_by_id(store, folderid)
         item = self.get_item_by_id(folder, itemid)
         fields = self.load_json(req)
         _ = req.context.i18n.gettext
@@ -276,7 +271,8 @@ class EventResource(ItemResource):
         item.accept(comment=fields.get('comment'), respond=(fields.get('sendResponse', True)), subject_prefix=_("Accepted"))
         resp.status = falcon.HTTP_202
 
-    def handle_post_tentativelyAccept(self, req, resp, store, folder, itemid):
+    def handle_post_tentativelyAccept(self, req, resp, store, folderid, itemid):
+        folder = self.get_folder_by_id(store, folderid)
         item = self.get_item_by_id(folder, itemid)
         fields = self.load_json(req)
         _ = req.context.i18n.gettext
@@ -284,7 +280,8 @@ class EventResource(ItemResource):
         item.accept(comment=fields.get('comment'), tentative=True, respond=(fields.get('sendResponse', True)), subject_prefix=_("Tentatively accepted"))
         resp.status = falcon.HTTP_202
 
-    def handle_post_decline(self, req, resp, store, folder, itemid):
+    def handle_post_decline(self, req, resp, store, folderid, itemid):
+        folder = self.get_folder_by_id(store, folderid)
         item = self.get_item_by_id(folder, itemid)
         fields = self.load_json(req)
         _ = req.context.i18n.gettext
@@ -293,8 +290,6 @@ class EventResource(ItemResource):
         resp.status = falcon.HTTP_202
 
     def on_post(self, req, resp, userid=None, folderid=None, eventid=None, method=None):
-        handler = None
-
         if method == 'accept':
             handler = self.handle_post_accept
 
@@ -314,17 +309,14 @@ class EventResource(ItemResource):
             raise HTTPBadRequest("Unsupported in event")
 
         server, store, userid = _server_store(req, userid, self.options)
-        folder = _folder(store, folderid or self.default_folder)
-        handler(req, resp, store=store, folder=folder, itemid=eventid)
+        handler(req, resp, store=store, folderid=folderid, itemid=eventid)
 
     def on_patch(self, req, resp, userid=None, folderid=None, eventid=None, method=None):
         server, store, userid = _server_store(req, userid, self.options)
-        folder = _folder(store, folderid or self.default_folder)
-        self.patch(req, resp, store=store, folder=folder, itemid=eventid)
+        self.patch(req, resp, store=store, folderid=folderid, itemid=eventid)
 
     def on_delete(self, req, resp, userid=None, folderid=None, eventid=None):
         handler = self.delete
 
         server, store, userid = _server_store(req, userid, self.options)
-        folder = _folder(store, folderid or self.default_folder)
-        handler(req, resp, store=folder, itemid=eventid)
+        handler(req, resp, store=store, folderid=folderid, itemid=eventid)

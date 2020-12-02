@@ -28,6 +28,8 @@ class CalendarResource(FolderResource):
     def name_field(cls, fields: dict):
         return fields['name']
 
+    default_folder_id = 'calendar'
+
     validation_schema = calendar_schema
 
     fields = FolderResource.fields.copy()
@@ -38,58 +40,42 @@ class CalendarResource(FolderResource):
     container_classes = ('IPF.Appointment',)
     container_class = 'IPF.Appointment'
 
-    def handle_get_calendarView(self, req, resp, folder):
+    @classmethod
+    def get_calendar_view(cls, req, resp, store, server, userid):
+        cls.get_calendar_view_in_folder(req, resp, store=store)
+
+    @classmethod
+    def get_calendar_view_in_folder(cls, req, resp, folderid=None, store=None):
+        if folderid:
+            folder = cls.get_folder_by_id(store, folderid)
+        else:
+            folder = store
         start, end = _start_end(req)
 
         def yielder(**kwargs):
             for occ in folder.occurrences(start, end, **kwargs):
                 yield occ
-        data = self.generator(req, yielder)
-        fields = EventResource.fields
-        self.respond(req, resp, data, fields)
-
-    def handle_get_events(self, req, resp, folder):
-        data = self.generator(req, folder.items, folder.count)
-        fields = EventResource.fields
-        self.respond(req, resp, data, fields)
-
-    def handle_get(self, req, resp, folder):
-        data = folder
-        fields = None
-
-        self.respond(req, resp, data, fields)
+        data = cls.generator(req, yielder)
+        cls.respond(req, resp, data, EventResource.fields)
 
     def on_get(self, req, resp, userid=None, folderid=None, method=None):
-        handler = None
-
         if method == 'calendarView':
-            handler = self.handle_get_calendarView
+            handler = self.get_calendar_view_in_folder
 
         elif method == 'events':
-            handler = self.handle_get_events
+            handler = EventResource.get_all_from_folder
 
         elif method:
             raise HTTPBadRequest("Unsupported calendar segment '%s'" % method)
 
         else:
-            handler = self.handle_get
+            handler = self.get
 
         server, store, userid = _server_store(req, userid, self.options)
-        folder = _folder(store, folderid or 'calendar')
-        handler(req, resp, folder=folder)
-
-    def handle_post_events(self, req, resp, folder):
-        fields = self.load_json(req)
-        self.validate_json(event_schema, fields)
-
-        item = self.create_item(folder, fields, EventResource.set_fields)
-        if fields.get('attendees', None):
-            # NOTE(longsleep): Sending can fail with NO_ACCCESS if no permission to outbox.
-            item.send()
-        self.respond(req, resp, item, EventResource.fields)
+        handler(req, resp, store=store, folderid=folderid)
 
     @experimental
-    def handle_post_schedule(self, req, resp, folder):
+    def handle_post_schedule(self, req, resp, store, folderid):
         fields = self.load_json(req)
         self.validate_json(get_schedule_schema, fields)
 
@@ -136,10 +122,8 @@ class CalendarResource(FolderResource):
         resp.body = _dumpb_json(data)
 
     def on_post(self, req, resp, userid=None, folderid=None, method=None):
-        handler = None
-
         if method == 'events':
-            handler = self.handle_post_events
+            handler = EventResource.create_in_folder
 
         elif method == 'getSchedule':
             handler = self.handle_post_schedule
@@ -151,5 +135,4 @@ class CalendarResource(FolderResource):
             raise HTTPBadRequest("Unsupported in calendar")
 
         server, store, userid = _server_store(req, userid, self.options)
-        folder = _folder(store, folderid or 'calendar')
-        handler(req, resp, folder=folder)
+        handler(req, resp, store=store, folderid=folderid)

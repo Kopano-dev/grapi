@@ -1,6 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-
-import falcon
 import logging
 
 from MAPI.Tags import (
@@ -22,7 +20,7 @@ from MAPI.Tags import (
 
 from . import attachment  # import as module since this is a circular import
 from .item import ItemResource, get_body, get_email, set_body
-from .resource import DEFAULT_TOP, _date, parse_datetime_timezone, _tzdate
+from .resource import _date, parse_datetime_timezone, _tzdate
 from .utils import HTTPBadRequest, _folder, _server_store, _set_value_by_tag, experimental
 
 
@@ -127,7 +125,7 @@ class DeletedTodoResource(ItemResource):
 
 @experimental
 class TaskResource(ItemResource):
-    default_folder = 'tasks'
+    default_folder_id = 'tasks'
 
     fields = ItemResource.fields.copy()
     fields.update({
@@ -185,8 +183,7 @@ class TaskResource(ItemResource):
             raise HTTPBadRequest("Unsupported in note")
 
         server, store, userid = _server_store(req, userid, self.options)
-        folder = _folder(store, folderid or self.default_folder)  # TODO all folders?
-        handler(req, resp, store=store, folder=folder, itemid=itemid)
+        handler(req, resp, store=store, folderid=folderid, itemid=itemid)
 
     def on_post(self, req, resp, userid=None, folderid=None, itemid=None, method=None):
         if method == 'attachments':
@@ -205,8 +202,7 @@ class TaskResource(ItemResource):
             raise HTTPBadRequest("Unsupported in task")
 
         server, store, userid = _server_store(req, userid, self.options)
-        folder = _folder(store, folderid or self.default_folder)  # TODO all folders?
-        handler(req, resp, store=store, folder=folder, itemid=itemid)
+        handler(req, resp, store=store, folderid=folderid, itemid=itemid)
 
     def on_patch(self, req, resp, userid=None, folderid=None, itemid=None, method=None):
         if not method:
@@ -216,12 +212,9 @@ class TaskResource(ItemResource):
             raise HTTPBadRequest("Unsupported task segment '%s'" % method)
 
         server, store, userid = _server_store(req, userid, self.options)
-        folder = _folder(store, folderid or self.default_folder)  # TODO all folders?
-        handler(req, resp, store=store, folder=folder, itemid=itemid)
+        handler(req, resp, store=store, folderid=folderid, itemid=itemid)
 
     def on_delete(self, req, resp, userid=None, folderid=None, itemid=None, method=None):
-        handler = None
-
         if not method:
             handler = self.delete
 
@@ -229,11 +222,7 @@ class TaskResource(ItemResource):
             raise HTTPBadRequest("Unsupported task segment '%s'" % method)
 
         server, store, userid = _server_store(req, userid, self.options)
-        if folderid:
-            folder = _folder(store, folderid)
-        else:
-            folder = store
-        handler(req, resp, store=folder, itemid=itemid)
+        handler(req, resp, store=store, folderid=folderid, itemid=itemid)
 
 
 class EmbeddedTaskResource(TaskResource):

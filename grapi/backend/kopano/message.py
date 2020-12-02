@@ -1,6 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-import base64
-
 import falcon
 import logging
 
@@ -22,9 +20,10 @@ from MAPI.Tags import (
 )
 
 from . import attachment  # import as module since this is a circular import
+from .schema import message_schema
 from .item import ItemResource, get_body, get_email, set_body
-from .resource import DEFAULT_TOP, _date, parse_datetime_timezone, _tzdate
-from .utils import HTTPBadRequest, _folder, _item, _server_store, _set_value_by_tag, experimental
+from .resource import _date, parse_datetime_timezone, _tzdate
+from .utils import HTTPBadRequest, _server_store, _set_value_by_tag, experimental
 
 
 def set_torecipients(item, arg: dict) -> None:
@@ -156,7 +155,9 @@ class MessageResource(ItemResource):
     def default_folder_create(cls, store):
         return store.drafts
 
-    default_folder = 'inbox'
+    default_folder_id = 'inbox'
+    alt_folder_id = 'drafts'
+    validation_schema = message_schema
 
     fields = ItemResource.fields.copy()
     fields.update({
@@ -221,16 +222,16 @@ class MessageResource(ItemResource):
             raise HTTPBadRequest("Unsupported in message")
 
         server, store, userid = _server_store(req, userid, self.options)
-        folder = _folder(store, folderid or self.default_folder)  # TODO all folders?
-        handler(req, resp, store=store, folder=folder, itemid=itemid)
+        handler(req, resp, store=store, folderid=folderid, itemid=itemid)
 
-    def handle_post_createReply(self, req, resp, store, folder, itemid):
-        self._handle_post_createRaplyOrCreateReplyAll(req, resp, store, folder, itemid, False)
+    def handle_post_createReply(self, req, resp, store, folderid, itemid):
+        self._handle_post_createRaplyOrCreateReplyAll(req, resp, store, folderid, itemid, False)
 
-    def handle_post_createReplyAll(self, req, resp, store, folder, itemid):
-        self._handle_post_createRaplyOrCreateReplyAll(req, resp, store, folder, itemid, True)
+    def handle_post_createReplyAll(self, req, resp, store, folderid, itemid):
+        self._handle_post_createRaplyOrCreateReplyAll(req, resp, store, folderid, itemid, True)
 
-    def _handle_post_createRaplyOrCreateReplyAll(self, req, resp, store, folder, itemid, replyAll: bool):
+    def _handle_post_createRaplyOrCreateReplyAll(self, req, resp, store, folderid, itemid, replyAll: bool):
+        folder = self.get_folder_by_id(store, folderid)
         item = self.get_item_by_id(folder, itemid)
         fields = self.load_json(req)
         if 'message' in fields:
@@ -246,7 +247,8 @@ class MessageResource(ItemResource):
         self.respond(req, resp, new_item, MessageResource.fields)
         resp.status = falcon.HTTP_201
 
-    def handle_post_send(self, req, resp, store, folder, itemid):
+    def handle_post_send(self, req, resp, store, folderid, itemid):
+        folder = self.get_folder_by_id(store, folderid)
         item = self.get_item_by_id(folder, itemid)
         item.send()
         resp.status = falcon.HTTP_202
@@ -270,7 +272,7 @@ class MessageResource(ItemResource):
         elif method == 'send' or method == 'microsoft.graph.send':
             handler = self.handle_post_send
 
-        # TODO add forward messge
+        # TODO add forward message
         # elif method == 'send' or method == 'microsoft.graph.forward':
         #     handler = self.handle_post_forward
 
@@ -281,33 +283,25 @@ class MessageResource(ItemResource):
             raise HTTPBadRequest("Unsupported in message")
 
         server, store, userid = _server_store(req, userid, self.options)
-        folder = _folder(store, folderid or self.default_folder)  # TODO all folders?
-        handler(req, resp, store=store, folder=folder, itemid=itemid)
+        handler(req, resp, store=store, folderid=folderid, itemid=itemid)
 
     def on_patch(self, req, resp, userid=None, folderid=None, itemid=None, method=None):
         if not method:
             handler = self.patch
-
         else:
             raise HTTPBadRequest("Unsupported message segment '%s'" % method)
 
         server, store, userid = _server_store(req, userid, self.options)
-        folder = _folder(store, folderid or 'inbox')  # TODO all folders?
-        handler(req, resp, store=store, folder=folder, itemid=itemid)
+        handler(req, resp, store=store, folderid=folderid, itemid=itemid)
 
     def on_delete(self, req, resp, userid=None, folderid=None, itemid=None, method=None):
         if not method:
             handler = self.delete
-
         else:
             raise HTTPBadRequest("Unsupported message segment '%s'" % method)
 
         server, store, userid = _server_store(req, userid, self.options)
-        if folderid:
-            folder = _folder(store, folderid)
-        else:
-            folder = store
-        handler(req, resp, store=folder, itemid=itemid)
+        handler(req, resp, store=store, folderid=folderid, itemid=itemid)
 
 
 class EmbeddedMessageResource(MessageResource):
