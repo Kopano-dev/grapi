@@ -7,9 +7,8 @@ from kopano.errors import NotFoundError
 from .event import EventResource
 from .folder import FolderResource
 from .resource import _dumpb_json, _start_end, _tzdate, parse_datetime_timezone
-from .schema import event_schema, get_schedule_schema
-from .utils import HTTPBadRequest, _folder, _server_store, experimental
-
+from .schema import get_schedule_schema, calendar_schema
+from .utils import HTTPBadRequest, _server_store, experimental
 
 def get_fbinfo(req, block):
     return {
