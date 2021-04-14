@@ -35,6 +35,7 @@ class MailFolderResource(FolderResource):
 
     deleted_resource = DeletedMailFolderResource
     container_classes = (None, 'IPF.Note')
+    container_class = 'IPF.Note'
 
     def on_get(self, req, resp, userid=None, folderid=None, method=None):
         if method is None:

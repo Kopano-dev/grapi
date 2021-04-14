@@ -45,6 +45,7 @@ class FolderResource(Resource):
     def __init__(self, options):
         super().__init__(options)
 
+    container_classes = None
     container_class = None
 
     @experimental

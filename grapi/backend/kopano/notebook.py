@@ -27,7 +27,7 @@ class NotebookResource(FolderResource):
     })
 
     deleted_resource = DeletedNotebookResource
-    container_classes = (None, 'IPF.StickyNote')
+    container_classes = ('IPF.StickyNote',)
     container_class = 'IPF.StickyNote'
 
     def on_get(self, req, resp, userid=None, folderid=None, method=None):

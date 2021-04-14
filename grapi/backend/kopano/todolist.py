@@ -26,7 +26,7 @@ class TodoListResource(FolderResource):
     })
 
     deleted_resource = DeletedTodoListResource
-    container_classes = (None, 'IPF.Task')
+    container_classes = ('IPF.Task',)
     container_class = 'IPF.Task'
 
     def on_get(self, req, resp, userid=None, folderid=None, method=None):
