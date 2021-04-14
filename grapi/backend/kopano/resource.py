@@ -245,6 +245,7 @@ class Resource(BaseResource):
             return (generator(restriction=restriction, page_start=skip, page_limit=top, order=order), top, skip, count)
         else:
             return (generator(page_start=skip, page_limit=top, order=order), top, skip, count)
+
     @classmethod
     def create_item(cls, folder, fields, all_fields=None):
         # TODO item.update and/or only save in the end
