@@ -175,11 +175,15 @@ class MessageResource(ItemResource):
         Note:
             Based on MS Explorer result, it never validate folderid. So, we ignore it.
         """
+        store = req.context.server_store[1]
         if itemid is None:
             raise HTTPNotFound()
-        store = req.context.server_store[1]
-        item = _item(store, itemid)
-        self.respond(req, resp, item)
+        elif itemid == 'delta':  # TODO move to MailFolder resource somehow?
+            folder = _folder(store, folderid)
+            self._handle_get_delta(req, resp, store=store, folder=folder)
+        else:
+            item = _item(store, itemid)
+            self.respond(req, resp, item)
 
     def on_get_messages_by_folderid(self, req, resp, folderid):
         store = req.context.server_store[1]
