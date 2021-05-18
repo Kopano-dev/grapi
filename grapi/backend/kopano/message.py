@@ -56,6 +56,16 @@ def update_attr_value(item, attr_name, value):
     setattr(item, attr_name, value)
 
 
+def set_categories(item, value):
+    """Update categories value of an item.
+
+    Args:
+        item (Item): item object.
+        value (list): attribute value.
+    """
+    item.categories = value
+
+
 def get_internet_headers(item):
     """Format the RFC5322 Message Headers as specified by Microsoft Graph
 
@@ -119,6 +129,7 @@ class MessageResource(ItemResource):
         'from': lambda item, arg: set_user_email(item, 'from_', arg),
         'sender': lambda item, arg: set_user_email(item, 'sender', arg),
         'isRead': lambda item, value: update_attr_value(item, "read", value),
+        'categories': lambda item, value: set_categories(item, value),
     }
 
     deleted_resource = DeletedMessageResource
