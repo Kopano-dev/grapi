@@ -52,10 +52,7 @@ class GroupResource(Resource):
         self.respond(req, resp, data, self.fields)
 
     def on_get_members(self, req, resp, groupid):
-        server, _, userid = req.context.server_store
-
-        if not groupid:
-            groupid = req.path.split('/')[-2]
+        server, _, _ = req.context.server_store
 
         self.handle_get_members(req, resp, server, groupid)
 
