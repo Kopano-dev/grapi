@@ -150,6 +150,25 @@ class MessageResource(ItemResource):
         data = self.folder_gen(req, store.inbox)
         self.respond(req, resp, data, MessageResource.fields)
 
+    def on_get_delta(self, req, resp, folderid=None):
+        """Get delta messages sync by folder ID.
+
+        Args:
+            req (Request): Falcon request object.
+            resp (Response): Falcon response object.
+            folderid (str): folder ID. Defaults to None. folderid value is mandatory
+
+        Raises:
+            HTTPNotFound: when folderid is None.
+        """
+
+        if folderid is None:
+            raise HTTPNotFound()
+
+        store = req.context.server_store[1]
+        folder = _folder(store, folderid)
+        self._handle_get_delta(req, resp, store=store, folder=folder)
+
     def on_get_item(self, req, resp, folderid=None, itemid=None):
         """Get a message by folder ID.
 
@@ -165,15 +184,12 @@ class MessageResource(ItemResource):
         Note:
             Based on MS Explorer result, it never validate folderid. So, we ignore it.
         """
-        store = req.context.server_store[1]
         if itemid is None:
             raise HTTPNotFound()
-        elif itemid == 'delta':  # TODO move to MailFolder resource somehow?
-            folder = _folder(store, folderid)
-            self._handle_get_delta(req, resp, store=store, folder=folder)
-        else:
-            item = _item(store, itemid)
-            self.respond(req, resp, item)
+
+        store = req.context.server_store[1]
+        item = _item(store, itemid)
+        self.respond(req, resp, item)
 
     def on_get_messages_by_folderid(self, req, resp, folderid):
         store = req.context.server_store[1]
