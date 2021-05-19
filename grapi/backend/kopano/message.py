@@ -253,6 +253,10 @@ class MessageResource(ItemResource):
             resp (Response): Falcon response object.
             itemid (str): message ID. Defaults to None. itemid value is mandatory.
         """
+
+        if itemid is None:
+            raise HTTPNotFound()
+
         store = req.context.server_store[1]
         item = _item(store, itemid)
         self._handle_post_send(req, resp, item)
