@@ -51,6 +51,14 @@ class GroupResource(Resource):
         data = (user.groups(), DEFAULT_TOP, 0, 0)
         self.respond(req, resp, data, self.fields)
 
+    def on_get_members(self, req, resp, groupid):
+        server, _, userid = req.context.server_store
+
+        if not groupid:
+            groupid = req.path.split('/')[-2]
+
+        self.handle_get_members(req, resp, server, groupid)
+
     def on_get(self, req, resp, userid=None, groupid=None, method=None):
         handler = None
 
