@@ -251,9 +251,21 @@ class MessageResource(ItemResource):
         self.respond(req, resp, item.reply(all=True))
         resp.status = falcon.HTTP_201
 
-    def handle_post_send(self, req, resp, store, folder, item):
+    def _handle_post_send(self, req, resp, item):
         item.send()
         resp.status = falcon.HTTP_202
+
+    def on_post_send(self, req, resp, itemid=None):
+        """Handle POST request on 'send' action.
+
+        Args:
+            req (Request): Falcon request object.
+            resp (Response): Falcon response object.
+            itemid (str): message ID. Defaults to None. itemid value is mandatory.
+        """
+        store = req.context.server_store[1]
+        item = _item(store, itemid)
+        self._handle_post_send(req, resp, item)
 
     def _create_message(self, req, resp, folderid):
         """Create a new message in a defined folder.
