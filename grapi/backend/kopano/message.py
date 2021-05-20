@@ -269,7 +269,6 @@ class MessageResource(ItemResource):
             resp (Response): Falcon response object.
             itemid (str): message ID. Defaults to None. itemid value is mandatory.
         """
-
         if itemid is None:
             raise HTTPNotFound()
 
