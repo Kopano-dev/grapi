@@ -161,7 +161,6 @@ class MessageResource(ItemResource):
         Raises:
             HTTPNotFound: when folderid is None.
         """
-
         if folderid is None:
             raise HTTPNotFound()
         store = req.context.server_store[1]
