@@ -156,12 +156,20 @@ class API(BaseAPI):
                                attachments, suffix="by_id")
                 self.add_route(user + '/messages/{itemid}/attachments/{attachmentid}',
                                attachments, suffix="by_id")
+                self.add_route(user + '/messages/{itemid}/attachments/{attachmentid}/item',
+                               attachments, suffix="embedded_item_by_id")
+                self.add_route(user + '/messages/{itemid}/attachments/{attachmentid}/item/$value',
+                               messages, suffix="embedded_value")
                 self.add_route(user + '/messages/{itemid}/attachments/{attachmentid}/$value',
                                attachments, suffix="binary_by_id")
                 self.add_route(user + '/mailFolders/{folderid}/messages/{itemid}/attachments',
                                attachments, suffix="in_folder_by_id")
                 self.add_route(user + '/mailFolders/{folderid}/messages/{itemid}/attachments/{attachmentid}',
                                attachments, suffix="in_folder_by_id")
+                self.add_route(user + '/mailFolders/{folderid}/messages/{itemid}/attachments/{attachmentid}/item',
+                               attachments, suffix="embedded_item_by_id")
+                self.add_route(user + '/mailFolders/{folderid}/messages/{itemid}/attachments/{attachmentid}/item/$value',
+                               messages, suffix="embedded_folder_value")
                 self.add_route(user + '/mailFolders/{folderid}/messages/{itemid}/attachments/{attachmentid}/$value',
                                attachments, suffix="binary_in_folder_by_id")
 

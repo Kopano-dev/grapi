@@ -191,6 +191,26 @@ class AttachmentResource(Resource):
         item = get_item(req, itemid)
         self._response_attachments(req, resp, item, attachmentid)
 
+    def on_get_embedded_item_by_id(self, req, resp, itemid, attachmentid):
+        """Response attachment embedded item by itemid with attachment ID.
+
+         Args:
+            req (Request): Falcon request object.
+            resp (Response): Falcon response object.
+            item (Item): instance of an item.
+            attachmentid (str): attachment ID which is related to the item. Must be set.
+        """
+
+        if not attachmentid:
+            raise falcon.HTTPNotFound()
+
+        response = partial(self.respond, req, resp)
+        item = get_item(req, itemid)
+        attachment = item.attachment(attachmentid)
+        embedded_item = attachment.item
+
+        response(embedded_item, message.EmbeddedMessageResource.fields)
+
     def on_get_binary_by_id(self, req, resp, itemid, attachmentid):
         """Return attachment's raw by itemid and attachmentid.
 
@@ -218,6 +238,18 @@ class AttachmentResource(Resource):
         item = get_item_by_folder(req, folder, itemid)
         self._response_attachments(req, resp, item, attachmentid)
 
+    def on_get_embedded_item_in_folder_by_id(self, req, resp, folderid, itemid, attachmentid):
+        """Response attachment embedded item by itemid with attachment ID in a specific folder.
+
+         Args:
+            req (Request): Falcon request object.
+            resp (Response): Falcon response object.
+            folderid (str): folder ID which the item exists in.
+            itemid (str): item ID (e.g. message ID or event ID).
+            attachmentid (str): attachment ID which is related to the item. Must be set.
+        """
+        self.on_get_embedded_item_by_id(req, resp, itemid, attachmentid)
+
     def on_get_binary_in_folder_by_id(self, req, resp, folderid, itemid, attachmentid):
         """Return attachment's raw by itemid and attachmentid in a specific folder.
 
@@ -236,11 +268,6 @@ class AttachmentResource(Resource):
     def _response_attachments(self, req, resp, item, attachmentid=None):
         """Response attachments by itemid with or without attachment ID.
 
-        Todo:
-            to return list of attachments, we're hardcoded fields of FileAttachmentResource
-            while it should be more dynamic to support other types like reference or item
-            attachments as well. (issue: KC-1914)
-
          Args:
             req (Request): Falcon request object.
             resp (Response): Falcon response object.
@@ -250,9 +277,16 @@ class AttachmentResource(Resource):
         response = partial(self.respond, req, resp)
         if attachmentid is None:
             attachments = list(item.attachments(embedded=True))
+
+            att_fields = []
+            for att in attachments:
+                if att.embedded is True:
+                    att_fields.append((att, ItemAttachmentResource))
+                else:
+                    att_fields.append((att, FileAttachmentResource))
+
             response(
-                (attachments, DEFAULT_TOP, 0, len(attachments)),
-                FileAttachmentResource.fields
+                (att_fields, DEFAULT_TOP, 0, len(att_fields))
             )
         else:
             attachment = item.attachment(attachmentid)
@@ -386,6 +420,6 @@ class ItemAttachmentResource(AttachmentResource):
         'name': lambda attachment: attachment.item.subject,  # TODO faster? attachment.something?
     })
 
-    expansions = {
-        'microsoft.graph.itemAttachment/item': lambda attachment: (attachment.item, message.EmbeddedMessageResource),
+    relations = {
+        'item': lambda attachment: (attachment.item, message.EmbeddedMessageResource),
     }

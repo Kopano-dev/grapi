@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 import falcon
 
+import inetmapi
+
 from grapi.api.v1.schema import message as message_schema
 
 from . import attachment  # import as module since this is a circular import
@@ -125,7 +127,7 @@ class MessageResource(ItemResource):
     deleted_resource = DeletedMessageResource
 
     relations = {
-        'attachments': lambda message: (message.attachments, attachment.FileAttachmentResource),  # TODO embedded
+        'attachments': lambda message: (message.attachments(embedded=True), attachment.FileAttachmentResource),  # TODO embedded
     }
 
     # GET
@@ -194,6 +196,49 @@ class MessageResource(ItemResource):
         data = _folder(store, folderid)
         data = self.folder_gen(req, data)
         self.respond(req, resp, data, MessageResource.fields)
+
+    def on_get_embedded_folder_value(self, req, resp, folderid=None, itemid=None, attachmentid=None):
+        """Get a message as RFC-2822 by item and attachment ID including a folderid.
+
+        Args:
+            req (Request): Falcon request object.
+            resp (Response): Falcon response object.
+            folderid (str): folder ID. Defaults to None.
+            itemid (str): message ID. Defaults to None. itemid value is mandatory.
+            attachmentid (str): message ID. Defaults to None. attachmentid value is mandatory.
+
+        Raises:
+            HTTPNotFound: when itemid or attachmentid is None.
+
+        Note:
+            Based on MS Explorer result, it never validate folderid. So, we ignore it.
+        """
+        if itemid is None or attachmentid is None:
+            raise HTTPNotFound()
+        self.on_get_embedded_value(self, req, resp, itemid, attachmentid)
+
+    def on_get_embedded_value(self, req, resp, itemid=None, attachmentid=None):
+        """Get a message as RFC-2822 by item and attachment ID.
+
+        Args:
+            req (Request): Falcon request object.
+            resp (Response): Falcon response object.
+            itemid (str): message ID. Defaults to None. itemid value is mandatory.
+            attachmentid (str): message ID. Defaults to None. attachmentid value is mandatory.
+
+        Raises:
+            HTTPNotFound: when itemid or attachmentid is None.
+        """
+        if itemid is None or attachmentid is None:
+            raise HTTPNotFound()
+        store = req.context.server_store[1]
+        item = _item(store, itemid)
+        attachment = item.attachment(attachmentid)
+        embedded_item = attachment.item
+        # Super ugly hack to get data of embedded items and make them available (not available via kopano-python)
+        sopt = inetmapi.sending_options()
+        resp.body = inetmapi.IMToINet(store.server.mapisession, None, embedded_item.mapiobj, sopt).decode()
+        resp.content_type = "text/plain"
 
     def on_get_value(self, req, resp, folderid=None, itemid=None):
         """Get a message as RFC-2822 by folder ID.
